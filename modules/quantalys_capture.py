@@ -19,7 +19,7 @@ def qtl_historique_url(url: str) -> str:
     return url
 
 
-def capture_quantalys_chart(qtl_url: str, force: bool = False) -> bytes | None:
+def capture_quantalys_chart(qtl_url: str, force: bool = False) -> object:
     """
     Cattura screenshot del grafico storico Quantalys.
     Cache su file — se esiste già restituisce quello cached.

@@ -403,32 +403,34 @@ def generate_portfolio_pdf(
 
             # Grafico Quantalys (come app Azimut) — solo se richiesto esplicitamente
             if include_quantalys:
-                if qly_url and qly_url.lower() not in ("nan","none",""):
+                card.append(Spacer(1, 6))
+                card.append(Paragraph("<b>Analisi Quantalys</b> · Serie Storica & Performance", FK))
+                if not qly_url or qly_url.lower() in ("nan","none",""):
+                    card.append(Paragraph(
+                        '<font color="#94A3B8"><i>URL Quantalys non disponibile per questo fondo.</i></font>', FK))
+                else:
                     try:
-                        from .quantalys_capture import capture_quantalys_chart
+                        from .quantalys_capture import capture_quantalys_chart, qtl_historique_url
                         from PIL import Image as _PILImage
                         from reportlab.platypus import Image as _RLImg
-                        png = capture_quantalys_chart(qly_url)
-                        if png:
+                        hist_url = qtl_historique_url(qly_url)
+                        card.append(Paragraph(
+                            f'<link href="{hist_url}" color="#2E86AB">{hist_url[:70]}</link>', FK))
+                        png = capture_quantalys_chart(qly_url, force=False)
+                        if png and len(png) > 1000:
                             pil = _PILImage.open(io.BytesIO(png))
                             w_px, h_px = pil.size
                             aspect = h_px / w_px if w_px > 0 else 0.5
                             img_w = PW
                             img_h = min(img_w * aspect, 7 * cm)
-                            card.append(Spacer(1, 6))
-                            card.append(Paragraph(
-                                "<b>Analisi Quantalys</b> · Serie Storica & Performance", FK))
                             card.append(_RLImg(io.BytesIO(png), width=img_w, height=img_h))
                         else:
                             card.append(Paragraph(
-                                f'<font color="#94A3B8"><i>Grafico Quantalys non disponibile. '
-                                f'<link href="{qly_url}" color="#2E86AB">Apri su Quantalys</link></i></font>', FK))
+                                f'<font color="#CC0000"><i>Cattura fallita (PNG vuoto). '
+                                f'Controlla connessione Playwright.</i></font>', FK))
                     except Exception as e:
                         card.append(Paragraph(
-                            f'<font color="#94A3B8"><i>Grafico Quantalys: {str(e)[:60]}</i></font>', FK))
-                else:
-                    card.append(Paragraph(
-                        '<font color="#94A3B8"><i>Scheda Quantalys non disponibile per questo fondo.</i></font>', FK))
+                            f'<font color="#CC0000"><i>Errore cattura: {str(e)[:120]}</i></font>', FK))
 
             # Link FondiDoc
             if fd_url and fd_url.lower() not in ("nan","none",""):
