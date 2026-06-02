@@ -168,8 +168,18 @@ with tab_portafogli:
 
         st.divider()
 
+        max_dist = st.slider(
+            "% massima fondi a distribuzione nel portafoglio",
+            min_value=0, max_value=100, value=50, step=10,
+            format="%d%%",
+            help="Es. 50% = max metà dei fondi selezionati può essere a distribuzione. "
+                 "0% = solo accumulazione, 100% = nessun limite.",
+            key="ptf_max_dist"
+        )
+
         if st.button("🎯 Genera portafogli", key="btn_gen_ptf", type="primary"):
-            ptf_q, ptf_r = suggest_portfolio_dual(df, scenario_sel, min_rating, n_per)
+            ptf_q, ptf_r = suggest_portfolio_dual(df, scenario_sel, min_rating, n_per,
+                                                   max_dist_pct=max_dist/100)
             if not ptf_q and not ptf_r:
                 st.warning("Nessun fondo trovato. Abbassa il rating minimo o modifica i filtri.")
             else:

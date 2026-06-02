@@ -141,19 +141,28 @@ def _quality_score(row) -> float:
         return 0.0
 
 
+def _fund_root(nome: str) -> str:
+    """Radice del nome fondo: rimuove classe/divisa/acc/inc dal fondo per detectare stessa strategia."""
+    n = re.sub(r'\b(ACC|INC|DIST|DIS|A|B|C|D|E|EUR|USD|GBP|HDG|EURHDG|USDHDG|'
+               r'CHFHDG|GBPHDG|CAP|RETAIL|INSTIT|R|I|W|N|P|Q|VTA|MINC)\b', '', nome.upper())
+    return re.sub(r'\s+', ' ', n).strip()
+
+
 def _select_bucket_funds(
     df_b: pd.DataFrame,
     n: int,
     primary_col: str,
     secondary_col: str,
     max_house_pct: float = 0.5,
+    max_dist_pct: float = 1.0,  # quota massima fondi a distribuzione (0-1)
 ) -> pd.DataFrame:
     """
     Seleziona n fondi da un bucket applicando i vincoli:
-    - Max max_house_pct della selezione dalla stessa casa di gestione
-    - Max 1 fondo per sottoclassificazione specifica
-    - Priorità a fondi globali/internazionali (almeno 1 se disponibile)
-    Ordina per primary_col desc, secondary_col desc a parità.
+    - Max max_house_pct fondi dalla stessa casa di gestione
+    - Max 1 fondo per sottoclassificazione FIDA (sempre, anche per fondi globali)
+    - Max 1 fondo con stessa radice strategia (es. ACC e MINC dello stesso fondo → 1 solo)
+    - Almeno 1 fondo globale/internazionale se disponibile
+    - Rispetta quota massima distribuzione sul totale
     """
     df_b = df_b.copy()
     df_b["_primary"]   = pd.to_numeric(df_b[primary_col],   errors="coerce").fillna(0)
@@ -163,6 +172,8 @@ def _select_bucket_funds(
     )
     df_b["_house"]  = df_b[COL["house"]].astype(str).str.strip().str.upper()
     df_b["_subcat"] = df_b[COL["classif"]].astype(str).str.strip().str.upper()
+    df_b["_root"]   = df_b[COL["nome"]].astype(str).apply(_fund_root)
+    df_b["_is_dist"]= df_b[COL["acc_dist"]].astype(str).str.upper().str.contains("DISTRIB", na=False)
 
     # Ordina: globali prima, poi primary_col, poi secondary_col
     df_sorted = df_b.sort_values(
@@ -173,37 +184,56 @@ def _select_bucket_funds(
     selected = []
     house_counts: dict[str, int] = {}
     used_subcats: set[str] = set()
+    used_roots:   set[str] = set()
+    dist_count = 0
 
     for _, row in df_sorted.iterrows():
         if len(selected) >= n:
             break
-        house   = row["_house"]
-        subcat  = row["_subcat"]
+        house  = row["_house"]
+        subcat = row["_subcat"]
+        root   = row["_root"]
+        is_dist = bool(row["_is_dist"])
         n_total = max(n, 1)
 
         # Vincolo: max 50% stessa casa
         if house_counts.get(house, 0) >= max(1, round(n_total * max_house_pct)):
             continue
-        # Vincolo: 1 fondo per sottoclassificazione (se già coperta salta)
-        if subcat in used_subcats and not row["_global"]:
+        # Vincolo: 1 fondo per sottoclassificazione FIDA (senza eccezioni)
+        if subcat in used_subcats:
             continue
+        # Vincolo: 1 fondo per radice strategia (evita ACC+MINC della stessa strategia)
+        if root in used_roots:
+            continue
+        # Vincolo quota distribuzione
+        if is_dist and max_dist_pct < 1.0:
+            if len(selected) > 0 and (dist_count + 1) / n_total > max_dist_pct:
+                continue
 
         selected.append(row)
         house_counts[house] = house_counts.get(house, 0) + 1
         used_subcats.add(subcat)
+        used_roots.add(root)
+        if is_dist:
+            dist_count += 1
 
-    # Se non abbiamo trovato abbastanza, aggiungi i rimanenti senza il vincolo subcat
+    # Fallback senza vincolo subcat se non abbiamo abbastanza fondi
     if len(selected) < n:
         selected_isins = {r[COL["isin"]] for r in selected}
         for _, row in df_sorted.iterrows():
             if len(selected) >= n:
                 break
-            if row[COL["isin"]] not in selected_isins:
-                house = row["_house"]
-                if house_counts.get(house, 0) < max(1, round(n_total * max_house_pct)):
-                    selected.append(row)
-                    house_counts[house] = house_counts.get(house, 0) + 1
-                    selected_isins.add(row[COL["isin"]])
+            if row[COL["isin"]] in selected_isins:
+                continue
+            root  = row["_root"]
+            house = row["_house"]
+            if root in used_roots:
+                continue
+            if house_counts.get(house, 0) < max(1, round(n_total * max_house_pct)):
+                selected.append(row)
+                house_counts[house] = house_counts.get(house, 0) + 1
+                used_roots.add(root)
+                selected_isins.add(row[COL["isin"]])
 
     return pd.DataFrame(selected) if selected else pd.DataFrame()
 
@@ -225,6 +255,7 @@ def suggest_portfolio_dual(
     scenario_key: str,
     min_rating: int = 3,
     n_per_bucket: int = 3,
+    max_dist_pct: float = 1.0,
 ) -> tuple[list[dict], list[dict]]:
     """
     Genera DUE portafogli per lo scenario selezionato, applicando i filtri sidebar già nel df.
@@ -264,7 +295,8 @@ def suggest_portfolio_dual(
             df_b = df_b.copy()
             df_b["_qscore"] = df_b.apply(_quality_score, axis=1)
 
-            sel = _select_bucket_funds(df_b, n_per_bucket, primary_col, secondary_col)
+            sel = _select_bucket_funds(df_b, n_per_bucket, primary_col, secondary_col,
+                                       max_dist_pct=max_dist_pct)
             if sel.empty:
                 continue
 
