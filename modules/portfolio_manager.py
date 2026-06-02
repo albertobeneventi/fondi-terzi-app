@@ -172,8 +172,14 @@ def classify_bucket(classif: str) -> str:
     return "Altro"
 
 
+# Davvero globale/internazionale (ampio respiro, nessuna area specifica)
 _GLOBAL_RE = re.compile(
-    r'\b(GLOBAL|WORLD|INTERNAZ|INTERNATION|MONDIALE|GLOBALE|GLOBALI|EMERGING|EUROPE|ASIA|AMERICA)\b',
+    r'\b(GLOBAL|WORLD|INTERNAZ|INTERNATION|MONDIALE|GLOBALE|GLOBALI|MULTI.ASSET|MULTIASSET|ALL.COUNTRY|ACWI)\b',
+    re.I
+)
+# Aree geografiche specifiche (NON globali)
+_SPECIFIC_GEO_RE = re.compile(
+    r'\b(EMERGING|EMERGENT|FRONTIER|EUROPE|EURO|ASIA|JAPAN|AMERICA|CHINA|INDIA|BRAZIL|US\b|USA|LATAM|LATIN|AFRICA|MIDDLE.EAST)\b',
     re.I
 )
 
@@ -196,8 +202,16 @@ def _geo_area(nome: str, classif: str) -> str:
 
 
 def _is_global(nome: str, classif: str) -> bool:
-    """True se il fondo ha respiro globale/internazionale."""
-    return bool(_GLOBAL_RE.search(str(nome)) or _GLOBAL_RE.search(str(classif)))
+    """
+    True solo se il fondo è genuinamente globale/internazionale.
+    Un fondo Emerging Markets NON è globale — è un'area geografica specifica.
+    Regola: contiene keyword globale E non contiene keyword area specifica.
+    """
+    text = (str(nome) + " " + str(classif)).upper()
+    has_global   = bool(_GLOBAL_RE.search(text))
+    has_specific = bool(_SPECIFIC_GEO_RE.search(text))
+    # Se menziona GLOBAL ma anche una area specifica (es. "Global Emerging") → non è globale puro
+    return has_global and not has_specific
 
 
 def _consistency_bonus(row) -> float:
