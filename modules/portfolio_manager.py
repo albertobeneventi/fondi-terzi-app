@@ -269,8 +269,9 @@ def _select_bucket_funds(
     primary_col: str,
     secondary_col: str,
     max_house_pct: float = 0.34,
-    target_dist_pct: float = 0.0,  # quota TARGET distribuzione (0=solo acc, 1=solo dist)
+    target_dist_pct: float = 0.0,
     max_geo_pct: float = 0.67,
+    max_hedge_pct: float = 0.50,   # default: max 50% hedged
 ) -> pd.DataFrame:
     """
     Seleziona n fondi da un bucket con tutti i vincoli professionali:
@@ -327,7 +328,7 @@ def _select_bucket_funds(
     n_total   = max(n, 1)
     max_house = max(1, round(n_total * max_house_pct))
     max_geo   = max(1, round(n_total * max_geo_pct))
-    max_hedge = max(1, n_total // 2)  # max 50% hedged per bucket
+    max_hedge = max(0, round(n_total * max_hedge_pct))  # configurabile via slider
 
     for _, row in df_sorted.iterrows():
         if len(selected) >= n:
@@ -403,6 +404,7 @@ def suggest_portfolio_dual(
     min_rating: int = 3,
     n_per_bucket: int = 3,
     target_dist_pct: float = 0.0,
+    max_hedge_pct: float = 0.50,
 ) -> tuple:
     """
     Genera DUE portafogli per lo scenario selezionato, applicando i filtri sidebar già nel df.
@@ -444,7 +446,8 @@ def suggest_portfolio_dual(
             df_b["_qscore"] = df_b.apply(_quality_score, axis=1)
 
             sel = _select_bucket_funds(df_b, n_per_bucket, primary_col, secondary_col,
-                                       target_dist_pct=target_dist_pct)
+                                       target_dist_pct=target_dist_pct,
+                                       max_hedge_pct=max_hedge_pct)
             if sel.empty:
                 continue
 
