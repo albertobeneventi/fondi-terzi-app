@@ -14,12 +14,15 @@ from .config import COL
 _PORTFOLIO_FILE = Path(__file__).parent.parent / "data" / "portfolios.json"
 # Nota: su Streamlit Cloud i file non persistono tra deploy. Per ora OK per uso locale.
 
-# Percorso GP cache dall'app Azimut (aggiornato quando l'utente carica un nuovo GP)
+# Percorso GP cache dall'app Azimut — solo su Windows locale
 _GP_CACHE_FILE = Path(r"C:\Users\benev\azimut_app\data\gp_cache.json")
 
-# Cartella per file mensili (catalogo PDF, ecc.)
-MONTHLY_FILES_DIR = Path(r"C:\Users\benev\monthly_files")
-MONTHLY_FILES_DIR.mkdir(exist_ok=True)
+# Cartella per file mensili — relativa alla cartella app (funziona su cloud e locale)
+MONTHLY_FILES_DIR = Path(__file__).parent.parent / "data" / "monthly_files"
+try:
+    MONTHLY_FILES_DIR.mkdir(parents=True, exist_ok=True)
+except Exception:
+    pass
 
 
 def _load_scenarios_from_gp_cache() -> dict:
