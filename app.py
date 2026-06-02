@@ -265,9 +265,14 @@ Il punteggio viene *amplificato* dal Rating FIDA (ogni stella aggiunge un moltip
         # Pesi scenario (compatibile con GP cache e valori hardcoded)
         d = sc.get("dettaglio", {})
         wc = st.columns(3)
-        wc[0].metric("Equity %",          f"{d.get('Equity %', '—')}{'%' if d.get('Equity %') else ''}")
-        wc[1].metric("Bond %",            f"{d.get('Bond %', '—')}{'%' if d.get('Bond %') else ''}")
-        wc[2].metric("Private Markets %", f"{d.get('Private Markets %', '30')}% (esclusi)")
+        # Supporta sia scenari GP (Equity %/Bond %/Private Markets %) sia scenari default (Equity effettiva %)
+        eq_key  = "Equity effettiva %" if "Equity effettiva %" in d else "Equity %"
+        eq_val  = d.get(eq_key, d.get("Equity %", "—"))
+        bon_val = d.get("Bond %", "—")
+        wc[0].metric("Equity effettiva (incl. Bilanciati)", f"{eq_val}{'%' if eq_val != '—' else ''}")
+        wc[1].metric("Bond %", f"{bon_val}{'%' if bon_val != '—' else ''}")
+        if "Private Markets %" in d:
+            wc[2].metric("Private Markets %", f"{d['Private Markets %']}% (esclusi)")
 
         st.divider()
 

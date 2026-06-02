@@ -104,40 +104,41 @@ def _load_scenarios_from_gp_cache() -> dict:
 
 def _default_scenarios() -> dict:
     """
-    Scenari indipendenti da GP: combinazione di profilo di rischio × outlook macro.
-    Usati quando il GP cache non è disponibile.
-    Basati su framework standard: Equity/Bond/Balanced con pesi calibrati sul profilo.
+    Scenari standard con esposizione azionaria EFFETTIVA calibrata
+    (Azionari + 50% Bilanciati/Flessibili = equity exposure target).
+    La componente Private Markets è redistributa 2/3 equity + 1/3 bond.
     """
     return {
-        # ── Profili per outlook CAUTO (scenario di incertezza / bear) ────────
-        "🛡️ PRUDENTE — Outlook Cauto": {
+        # Equity effettiva 30%: Azionari 15% + Bilanciati 30% (→15% equity) = 30%
+        "🛡️ PRUDENTE": {
             "descrizione": (
-                "Profilo difensivo. Prevalenza obbligazionaria di qualità, "
-                "esposizione azionaria limitata a titoli globali difensivi. "
+                "Esposizione azionaria effettiva 30% (azionari puri 15% + "
+                "componente equity dei bilanciati 15%). "
+                "Prevalenza obbligazionaria di qualità. "
                 "Adatto a scenari di rallentamento o alta volatilità."
             ),
             "pesi": {"Obbligazionari": 55, "Bilanciati/Flessibili": 30, "Azionari": 15},
-            "dettaglio": {"Equity %": 15, "Bond %": 55, "Bilanciati %": 30},
+            "dettaglio": {"Equity effettiva %": 30, "Bond %": 70},
         },
-        # ── Profilo BILANCIATO (scenario neutro / base) ───────────────────────
-        "⚖️ BILANCIATO — Outlook Neutro": {
+        # Equity effettiva 50%: Azionari 25% + Bilanciati 50% (→25% equity) = 50%
+        "⚖️ BILANCIATO": {
             "descrizione": (
-                "Profilo bilanciato classico. Mix equilibrato tra azionario globale, "
-                "obbligazionario diversificato e strategie flessibili. "
-                "Adatto a scenari di crescita moderata con incertezze."
+                "Esposizione azionaria effettiva 50% (azionari puri 25% + "
+                "componente equity dei bilanciati 25%). "
+                "Mix equilibrato tra crescita e stabilità."
             ),
-            "pesi": {"Azionari": 35, "Obbligazionari": 35, "Bilanciati/Flessibili": 30},
-            "dettaglio": {"Equity %": 35, "Bond %": 35, "Bilanciati %": 30},
+            "pesi": {"Azionari": 25, "Bilanciati/Flessibili": 50, "Obbligazionari": 25},
+            "dettaglio": {"Equity effettiva %": 50, "Bond %": 50},
         },
-        # ── Profilo DINAMICO (scenario costruttivo / bull) ────────────────────
-        "📈 DINAMICO — Outlook Costruttivo": {
+        # Equity effettiva 70%: Azionari 45% + Bilanciati 50% (→25% equity) = 70%
+        "📈 DINAMICO": {
             "descrizione": (
-                "Profilo orientato alla crescita. Sovrappeso azionario globale e tematico, "
-                "obbligazionario ridotto a componente diversificante. "
-                "Adatto a scenari di espansione economica."
+                "Esposizione azionaria effettiva 70% (azionari puri 45% + "
+                "componente equity dei bilanciati 25%). "
+                "Sovrappeso azionario, obbligazionario come diversificante."
             ),
-            "pesi": {"Azionari": 55, "Bilanciati/Flessibili": 25, "Obbligazionari": 20},
-            "dettaglio": {"Equity %": 55, "Bond %": 20, "Bilanciati %": 25},
+            "pesi": {"Azionari": 45, "Bilanciati/Flessibili": 50, "Obbligazionari": 5},
+            "dettaglio": {"Equity effettiva %": 70, "Bond %": 30},
         },
     }
 
