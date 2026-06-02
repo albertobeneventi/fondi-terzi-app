@@ -10,6 +10,21 @@ import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
 
+# ── Bootstrap Playwright Chromium (necessario su Streamlit Cloud) ─────────────
+@st.cache_resource(show_spinner=False)
+def _ensure_playwright_chromium():
+    import subprocess, sys
+    try:
+        r = subprocess.run(
+            [sys.executable, "-m", "playwright", "install", "chromium"],
+            capture_output=True, timeout=180
+        )
+        print(f"[playwright install] rc={r.returncode}", flush=True)
+    except Exception as e:
+        print(f"[playwright install] {e}", flush=True)
+
+_ensure_playwright_chromium()
+
 from modules.config import (
     COL, PCT_COLS, COLOR_PRIMARY, COLOR_ACCENT,
     COLOR_BG_LIGHT, COLOR_STAR_ON, COLOR_POS, COLOR_NEG, COLOR_NEUTRAL
