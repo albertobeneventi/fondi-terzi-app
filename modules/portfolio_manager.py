@@ -115,63 +115,190 @@ def classify_bucket(classif: str) -> str:
     return "Altro"
 
 
+_GLOBAL_RE = re.compile(
+    r'\b(GLOBAL|WORLD|INTERNAZ|INTERNATION|MONDIALE|GLOBALE|GLOBALI|EMERGING|EUROPE|ASIA|AMERICA)\b',
+    re.I
+)
+
+
+def _is_global(nome: str, classif: str) -> bool:
+    """True se il fondo ha respiro globale/internazionale."""
+    return bool(_GLOBAL_RE.search(str(nome)) or _GLOBAL_RE.search(str(classif)))
+
+
+def _quality_score(row) -> float:
+    """Punteggio qualità: rating FIDA (peso 50%) + Sharpe proxy (perf/vol, 30%) + perf 1Y (20%)."""
+    try:
+        rat = float(row.get(COL["rating"]) or 0)
+        p1  = float(row.get(COL["perf_1y"]) or 0)
+        vol = float(row.get(COL["volatilita"]) or 1)
+        sharpe = p1 / max(abs(vol), 0.01)
+        return rat * 2.0 + sharpe * 5.0 + p1 * 2.0
+    except Exception:
+        return 0.0
+
+
+def _select_bucket_funds(
+    df_b: pd.DataFrame,
+    n: int,
+    primary_col: str,
+    secondary_col: str,
+    max_house_pct: float = 0.5,
+) -> pd.DataFrame:
+    """
+    Seleziona n fondi da un bucket applicando i vincoli:
+    - Max max_house_pct della selezione dalla stessa casa di gestione
+    - Max 1 fondo per sottoclassificazione specifica
+    - Priorità a fondi globali/internazionali (almeno 1 se disponibile)
+    Ordina per primary_col desc, secondary_col desc a parità.
+    """
+    df_b = df_b.copy()
+    df_b["_primary"]   = pd.to_numeric(df_b[primary_col],   errors="coerce").fillna(0)
+    df_b["_secondary"] = pd.to_numeric(df_b[secondary_col], errors="coerce").fillna(0)
+    df_b["_global"]    = df_b.apply(
+        lambda r: _is_global(str(r.get(COL["nome"],"")), str(r.get(COL["classif"],""))), axis=1
+    )
+    df_b["_house"]  = df_b[COL["house"]].astype(str).str.strip().str.upper()
+    df_b["_subcat"] = df_b[COL["classif"]].astype(str).str.strip().str.upper()
+
+    # Ordina: globali prima, poi primary_col, poi secondary_col
+    df_sorted = df_b.sort_values(
+        ["_global", "_primary", "_secondary"],
+        ascending=[False, False, False]
+    )
+
+    selected = []
+    house_counts: dict[str, int] = {}
+    used_subcats: set[str] = set()
+
+    for _, row in df_sorted.iterrows():
+        if len(selected) >= n:
+            break
+        house   = row["_house"]
+        subcat  = row["_subcat"]
+        n_total = max(n, 1)
+
+        # Vincolo: max 50% stessa casa
+        if house_counts.get(house, 0) >= max(1, round(n_total * max_house_pct)):
+            continue
+        # Vincolo: 1 fondo per sottoclassificazione (se già coperta salta)
+        if subcat in used_subcats and not row["_global"]:
+            continue
+
+        selected.append(row)
+        house_counts[house] = house_counts.get(house, 0) + 1
+        used_subcats.add(subcat)
+
+    # Se non abbiamo trovato abbastanza, aggiungi i rimanenti senza il vincolo subcat
+    if len(selected) < n:
+        selected_isins = {r[COL["isin"]] for r in selected}
+        for _, row in df_sorted.iterrows():
+            if len(selected) >= n:
+                break
+            if row[COL["isin"]] not in selected_isins:
+                house = row["_house"]
+                if house_counts.get(house, 0) < max(1, round(n_total * max_house_pct)):
+                    selected.append(row)
+                    house_counts[house] = house_counts.get(house, 0) + 1
+                    selected_isins.add(row[COL["isin"]])
+
+    return pd.DataFrame(selected) if selected else pd.DataFrame()
+
+
 def suggest_portfolio(
     df: pd.DataFrame,
     scenario_key: str,
     min_rating: int = 3,
     n_per_bucket: int = 3,
-    sort_by: str = "retro",   # "retro" | "rating" | "perf_1y"
+    sort_by: str = "retro",
 ) -> list[dict]:
+    """Portafoglio singolo (legacy). Usa suggest_portfolio_dual per avere entrambe le varianti."""
+    result_q, _ = suggest_portfolio_dual(df, scenario_key, min_rating, n_per_bucket)
+    return result_q
+
+
+def suggest_portfolio_dual(
+    df: pd.DataFrame,
+    scenario_key: str,
+    min_rating: int = 3,
+    n_per_bucket: int = 3,
+) -> tuple[list[dict], list[dict]]:
     """
-    Suggerisce un portafoglio per lo scenario selezionato.
-    Seleziona i migliori n_per_bucket fondi per bucket, filtrati per rating ≥ min_rating.
-    Restituisce lista di dict con ISIN, nome, peso_target, bucket, metriche.
+    Genera DUE portafogli per lo scenario selezionato, applicando i filtri sidebar già nel df.
+
+    Portafoglio 1 — QUALITÀ:
+      Criterio primario: punteggio qualità (FIDA rating + Sharpe proxy)
+      Criterio secondario: retrocessione (a parità di qualità vince chi paga di più)
+
+    Portafoglio 2 — RETROCESSIONE:
+      Criterio primario: retrocessione banca
+      Criterio secondario: punteggio qualità
+
+    Vincoli (entrambi):
+      - Solo fondi Collocabile = SI
+      - Rating ≥ min_rating
+      - Max 50% stessa casa per bucket
+      - Max 1 fondo per sottoclassificazione
+      - Almeno 1 fondo globale/internazionale per bucket (se disponibile)
     """
-    scenario = SCENARIOS[scenario_key]
+    scenario    = SCENARIOS[scenario_key]
     pesi_bucket = scenario["pesi"]
 
-    sort_col = {
-        "retro":   COL["retro"],
-        "rating":  COL["rating"],
-        "perf_1y": COL["perf_1y"],
-    }.get(sort_by, COL["retro"])
+    def _build(primary_col: str, secondary_col: str) -> list[dict]:
+        result = []
+        for bucket, peso_tot in pesi_bucket.items():
+            df_b = df.copy()
+            df_b["_bucket"] = df_b[COL["classif"]].apply(classify_bucket)
+            df_b = df_b[df_b["_bucket"] == bucket]
+            if COL["collocabile"] in df_b.columns:
+                df_b = df_b[df_b[COL["collocabile"]].astype(str).str.upper().str.strip() == "SI"]
+            if min_rating > 0:
+                df_b = df_b[df_b[COL["rating"]].fillna(0) >= min_rating]
+            if df_b.empty:
+                continue
 
-    result = []
-    for bucket, peso_tot in pesi_bucket.items():
-        # Filtra per bucket, solo collocabili e rating minimo
-        df_b = df.copy()
-        df_b["_bucket"] = df_b[COL["classif"]].apply(classify_bucket)
-        df_b = df_b[df_b["_bucket"] == bucket]
-        # Solo fondi collocabili
-        if COL["collocabile"] in df_b.columns:
-            df_b = df_b[df_b[COL["collocabile"]].astype(str).str.upper().str.strip() == "SI"]
-        if min_rating > 0:
-            df_b = df_b[df_b[COL["rating"]].fillna(0) >= min_rating]
+            # Aggiungi punteggio qualità come colonna
+            df_b = df_b.copy()
+            df_b["_qscore"] = df_b.apply(_quality_score, axis=1)
 
-        # Ordina e prendi top N
-        if sort_col in df_b.columns:
-            df_b = df_b.sort_values(sort_col, ascending=False, na_position="last")
-        df_b = df_b.head(n_per_bucket)
+            sel = _select_bucket_funds(df_b, n_per_bucket, primary_col, secondary_col)
+            if sel.empty:
+                continue
 
-        if df_b.empty:
-            continue
+            peso_singolo = round(peso_tot / len(sel), 1)
+            for _, row in sel.iterrows():
+                result.append({
+                    "ISIN":         str(row.get(COL["isin"], "")),
+                    "nome":         str(row.get(COL["nome"], ""))[:70],
+                    "house":        str(row.get(COL["house"], "")),
+                    "bucket":       bucket,
+                    "peso":         peso_singolo,
+                    "rating":       row.get(COL["rating"]),
+                    "retro":        row.get(COL["retro"]),
+                    "perf_1y":      row.get(COL["perf_1y"]),
+                    "perf_3y":      row.get(COL["perf_3y"]),
+                    "classif":      str(row.get(COL["classif"], "")),
+                    "is_global":    bool(row.get("_global", False)),
+                    "url_fondidoc": str(row.get(COL["url_fondidoc"], "") or ""),
+                    "url_quantalys":str(row.get(COL["url_quantalys"], "") or ""),
+                })
+        return result
 
-        peso_singolo = round(peso_tot / len(df_b), 1)
-        for _, row in df_b.iterrows():
-            result.append({
-                "ISIN":        str(row.get(COL["isin"], "")),
-                "nome":        str(row.get(COL["nome"], ""))[:70],
-                "house":       str(row.get(COL["house"], "")),
-                "bucket":      bucket,
-                "peso":        peso_singolo,
-                "rating":      row.get(COL["rating"]),
-                "retro":       row.get(COL["retro"]),
-                "perf_1y":     row.get(COL["perf_1y"]),
-                "classif":     str(row.get(COL["classif"], "")),
-                "url_fondidoc": str(row.get(COL["url_fondidoc"], "") or ""),
-                "url_quantalys": str(row.get(COL["url_quantalys"], "") or ""),
-            })
-    return result
+    ptf_qualita  = _build("_qscore",     COL["retro"])
+    ptf_retro    = _build(COL["retro"],  "_qscore")
+    return ptf_qualita, ptf_retro
+
+
+def suggest_portfolio(
+    df: pd.DataFrame,
+    scenario_key: str,
+    min_rating: int = 3,
+    n_per_bucket: int = 3,
+    sort_by: str = "retro",
+) -> list[dict]:
+    """Portafoglio singolo (legacy). Usa suggest_portfolio_dual per entrambe le varianti."""
+    result_q, _ = suggest_portfolio_dual(df, scenario_key, min_rating, n_per_bucket)
+    return result_q
 
 
 # ── Storage portafogli ────────────────────────────────────────────────────────

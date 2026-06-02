@@ -18,10 +18,11 @@ from modules.data_loader import load_data
 from modules.filters import render_filters
 from modules.pdf_generator import generate_fund_pdf
 from modules.portfolio_manager import (
-    SCENARIOS, suggest_portfolio, save_portfolio,
+    SCENARIOS, suggest_portfolio, suggest_portfolio_dual, save_portfolio,
     load_portfolios, delete_portfolio, classify_bucket,
     reload_scenarios, MONTHLY_FILES_DIR, _GP_CACHE_FILE
 )
+from modules.portfolio_analysis import render_portfolio_analysis
 from modules.pdf_portfolio import generate_portfolio_pdf
 
 # ── PAGE CONFIG ──────────────────────────────────────────────────────────────
@@ -164,118 +165,80 @@ with tab_portafogli:
 
         st.divider()
 
-        if st.button("🎯 Genera portafoglio suggerito", key="btn_gen_ptf", type="primary"):
-            funds = suggest_portfolio(df_all, scenario_sel, min_rating, n_per, sort_by)
-            if not funds:
-                st.warning("Nessun fondo trovato con i criteri selezionati. Abbassa il rating minimo.")
+        if st.button("🎯 Genera portafogli", key="btn_gen_ptf", type="primary"):
+            ptf_q, ptf_r = suggest_portfolio_dual(df, scenario_sel, min_rating, n_per)
+            if not ptf_q and not ptf_r:
+                st.warning("Nessun fondo trovato. Abbassa il rating minimo o modifica i filtri.")
             else:
-                st.session_state["ptf_funds"] = funds
+                st.session_state["ptf_q"] = ptf_q
+                st.session_state["ptf_r"] = ptf_r
                 st.session_state["ptf_scenario_name"] = scenario_sel
-                st.success(f"Portafoglio generato: {len(funds)} fondi")
 
-        # Mostra portafoglio generato
-        if "ptf_funds" in st.session_state and st.session_state["ptf_funds"]:
-            funds = st.session_state["ptf_funds"]
-            total_peso = sum(f["peso"] for f in funds)
-            st.markdown(f"#### Composizione suggerita (totale: {total_peso:.1f}%)")
+        def _render_variant(funds: list, suffix: str):
+            """Renderizza una variante portafoglio: analisi + salva + PDF."""
+            if not funds:
+                st.info("Nessun fondo trovato con i criteri selezionati.")
+                return
 
-            # Raggruppa per bucket
-            buckets = {}
+            # ── Analisi stile Azimut (tabelle HTML) ──────────────────────────
+            # Arricchisci i fondi con i dati da df_all (volatilità, perf annuali, acc_dist)
+            isin_to_row = {str(r.get(COL["isin"],"")).strip(): r
+                           for _, r in df_all.iterrows()}
+            funds_rich = []
             for f in funds:
-                buckets.setdefault(f["bucket"], []).append(f)
+                row = isin_to_row.get(f["ISIN"], {})
+                enriched = dict(f)
+                for k, col in [("perf_ytd", COL["perf_ytd"]),
+                                ("perf_3y",  COL["perf_3y"]),
+                                ("perf_2024",COL["perf_2024"]),
+                                ("perf_2023",COL["perf_2023"]),
+                                ("perf_2022",COL["perf_2022"]),
+                                ("volatilita",COL["volatilita"]),
+                                ("acc_dist", COL["acc_dist"])]:
+                    enriched[k] = row.get(col)
+                funds_rich.append(enriched)
 
-            edited_funds = []
-            for bucket, bfunds in buckets.items():
-                bucket_peso = sum(f["peso"] for f in bfunds)
-                st.markdown(f"**{bucket}** — {bucket_peso:.1f}%")
-                for idx, f in enumerate(bfunds):
-                    fc1, fc2, fc3, fc4, fc5 = st.columns([4, 1, 1, 1, 1])
-                    fc1.write(f['nome'][:55])
-                    rating_str = "★" * int(f["rating"]) if f["rating"] and not pd.isna(f["rating"]) else "—"
-                    fc2.write(rating_str)
-                    fc3.write(f"{f['retro']*100:.2f}%" if f["retro"] and not pd.isna(f["retro"]) else "—")
-                    new_peso = fc4.number_input(
-                        "Peso%", value=float(f["peso"]), min_value=0.0, max_value=100.0,
-                        step=0.5, label_visibility="collapsed",
-                        key=f"peso_{f['ISIN']}_{idx}"
-                    )
-                    if fc5.checkbox("✓", value=True, key=f"chk_{f['ISIN']}_{idx}"):
-                        edited_funds.append({**f, "peso": new_peso})
+            render_portfolio_analysis(funds_rich)
 
             st.divider()
-
-            # ── Visualizzazione: torta + tabella ────────────────────────────
-            if edited_funds:
-                # Torta per bucket
-                bucket_map: dict = {}
-                for f in edited_funds:
-                    b = f.get("bucket", "Altro")
-                    bucket_map[b] = bucket_map.get(b, 0) + f.get("peso", 0)
-
-                _BCOLORS = {
-                    "Azionari": "#1B4FBB", "Obbligazionari": "#2D9D78",
-                    "Bilanciati/Flessibili": "#C9A84C", "Altro": "#94A3B8"
-                }
-                fig_pie = go.Figure(go.Pie(
-                    labels=list(bucket_map.keys()),
-                    values=list(bucket_map.values()),
-                    marker_colors=[_BCOLORS.get(b, "#94A3B8") for b in bucket_map],
-                    hole=0.35,
-                    textinfo="label+percent",
-                ))
-                fig_pie.update_layout(
-                    height=320, margin=dict(t=20, b=10, l=10, r=10),
-                    showlegend=True, legend=dict(orientation="h", y=-0.15)
-                )
-
-                vc1, vc2 = st.columns([2, 3])
-                vc1.plotly_chart(fig_pie, use_container_width=True)
-
-                # Tabella fondi
-                tbl_data = []
-                for f in sorted(edited_funds, key=lambda x: (x.get("bucket",""), -x.get("peso",0))):
-                    r   = f.get("rating")
-                    ret = f.get("retro")
-                    p1  = f.get("perf_1y")
-                    tbl_data.append({
-                        "Fondo": f.get("nome","")[:45],
-                        "Bucket": f.get("bucket","")[:15],
-                        "Peso %": f"{f.get('peso',0):.1f}%",
-                        "Rating": "★" * int(r) if r and str(r) not in ("nan","") else "—",
-                        "Retro.": f"{ret*100:.2f}%" if ret and str(ret) not in ("nan","") else "—",
-                        "Perf 1Y": f"{p1*100:.1f}%" if p1 and str(p1) not in ("nan","") else "—",
-                    })
-                vc2.dataframe(tbl_data, use_container_width=True, hide_index=True)
-
-            st.divider()
-            rc1, rc2 = st.columns([3, 2])
-            nome_ptf = rc1.text_input("💾 Nome del portafoglio", placeholder="es. Mio portafoglio base Q2 2026", key="ptf_nome")
-            incl_cards = rc2.checkbox("Includi schede fondo nel PDF", value=True, key="ptf_incl_cards")
-
-            bc1, bc2 = st.columns(2)
-            if bc1.button("Salva portafoglio", key="btn_save_ptf") and nome_ptf:
-                save_portfolio(nome_ptf, scenario_sel, min_rating, edited_funds)
-                st.success(f"Portafoglio '{nome_ptf}' salvato!")
-                del st.session_state["ptf_funds"]
-
-            if bc2.button("🖨️ Stampa PDF portafoglio", key="btn_pdf_ptf") and edited_funds:
-                with st.spinner("Generazione PDF portafoglio..."):
+            r1, r2 = st.columns([3, 2])
+            nome = r1.text_input("💾 Nome portafoglio",
+                                 placeholder="es. BASE qualità Q2 2026",
+                                 key=f"nome_{suffix}")
+            incl = r2.checkbox("Schede fondo nel PDF", value=True, key=f"incl_{suffix}")
+            b1, b2 = st.columns(2)
+            if b1.button("Salva portafoglio", key=f"save_{suffix}") and nome:
+                save_portfolio(nome, scenario_sel, min_rating, funds)
+                st.success(f"✅ Salvato: '{nome}'")
+            if b2.button("🖨️ Stampa PDF", key=f"pdf_{suffix}") and funds:
+                with st.spinner("Generazione PDF..."):
                     try:
                         pdf_bytes = generate_portfolio_pdf(
-                            nome_ptf or "Portafoglio",
+                            nome or "Portafoglio",
                             scenario_sel,
-                            edited_funds,
-                            include_fund_cards=incl_cards,
+                            funds_rich,
+                            include_fund_cards=incl,
                         )
-                        bc2.download_button(
+                        b2.download_button(
                             "⬇️ Scarica PDF",
                             data=pdf_bytes,
                             file_name=f"portafoglio_{datetime.date.today()}.pdf",
                             mime="application/pdf",
-                            key="dl_ptf_pdf"
+                            key=f"dl_{suffix}"
                         )
                     except Exception as e:
                         st.error(f"Errore PDF: {e}")
+
+        # ── Mostra i due portafogli in sotto-tab ─────────────────────────────
+        if st.session_state.get("ptf_q") or st.session_state.get("ptf_r"):
+            st.divider()
+            vtab_q, vtab_r = st.tabs(["🏆 Portafoglio Qualità", "💰 Portafoglio Retrocessione"])
+            with vtab_q:
+                st.caption("**Criterio**: Rating FIDA + Sharpe → Retrocessione a parità di qualità")
+                _render_variant(st.session_state.get("ptf_q", []), "q")
+            with vtab_r:
+                st.caption("**Criterio**: Retrocessione massima → Qualità come tiebreaker")
+                _render_variant(st.session_state.get("ptf_r", []), "r")
 
     # ── TAB: I miei portafogli ────────────────────────────────────────────────
     with ptab2:
@@ -289,14 +252,7 @@ with tab_portafogli:
                     total = sum(f.get("peso", 0) for f in funds)
                     st.caption(f"Rating minimo: {'★' * data.get('min_rating',0)} | {len(funds)} fondi | Totale peso: {total:.1f}%")
 
-                    for f in funds:
-                        lc1, lc2, lc3, lc4 = st.columns([4, 1, 1, 1])
-                        lc1.write(f.get("nome", "")[:55])
-                        lc2.write(f.get("bucket", "")[:15])
-                        lc3.write(f"{f['peso']:.1f}%")
-                        fd_url = f.get("url_fondidoc", "")
-                        if fd_url and fd_url.lower() not in ("nan", "none", ""):
-                            lc4.markdown(f"[FondiDoc]({fd_url})")
+                    render_portfolio_analysis(funds)
 
                     if st.button("🗑️ Elimina", key=f"del_{nome}"):
                         delete_portfolio(nome)
