@@ -382,17 +382,23 @@ Il punteggio viene *amplificato* dal Rating FIDA (ogni stella aggiunge un moltip
             nome = r1.text_input("💾 Nome portafoglio",
                                  placeholder="es. BASE qualità Q2 2026",
                                  key=f"nome_{suffix}")
-            incl = r2.checkbox("Schede fondo nel PDF", value=True, key=f"incl_{suffix}")
+            incl     = r2.checkbox("Schede fondo nel PDF", value=True, key=f"incl_{suffix}")
+            incl_qtl = r2.checkbox("📊 Grafici Quantalys (~30s)", value=False,
+                                   key=f"incl_qtl_{suffix}",
+                                   help="Aggiunge il grafico storico Quantalys per ogni fondo. "
+                                        "Richiede ~20-30s per fondo.")
             b1, b2 = st.columns(2)
             if b1.button("Salva portafoglio", key=f"save_{suffix}") and nome:
                 save_portfolio(nome, scenario_sel, min_rating, funds)
                 st.success(f"✅ Salvato: '{nome}'")
             if b2.button("🖨️ Stampa PDF", key=f"pdf_{suffix}") and funds:
-                with st.spinner("Generazione PDF..."):
+                spin_msg = "Generazione PDF con grafici Quantalys (~30s per fondo)..." if incl_qtl else "Generazione PDF..."
+                with st.spinner(spin_msg):
                     try:
                         pdf_bytes = generate_portfolio_pdf(
                             nome or "Portafoglio", scenario_sel, funds_rich,
                             include_fund_cards=incl,
+                            include_quantalys=incl_qtl,
                         )
                         b2.download_button("⬇️ Scarica PDF", data=pdf_bytes,
                                            file_name=f"portafoglio_{datetime.date.today()}.pdf",
