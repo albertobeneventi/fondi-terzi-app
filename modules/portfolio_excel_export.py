@@ -54,11 +54,15 @@ def export_portfolio_excel(funds: list[dict], portfolio_name: str = "") -> bytes
     # Ordina per bucket poi peso decrescente
     funds_sorted = sorted(funds, key=lambda x: (x.get("bucket",""), -x.get("peso", 0)))
 
+    # Normalizza pesi a 100 con 4 decimali
+    total_raw = sum(float(f.get("peso", 0)) for f in funds_sorted)
+    scale = 100.0 / total_raw if total_raw > 0 else 1.0
+
     for i, f in enumerate(funds_sorted):
         row = i + 3
         isin  = str(f.get("ISIN", "")).strip()
         nome  = str(f.get("nome", "")).strip()[:100]
-        peso  = round(float(f.get("peso", 0)), 4)
+        peso  = round(float(f.get("peso", 0)) * scale, 4)
 
         bg = "F2F7FF" if i % 2 == 0 else "FFFFFF"
 
