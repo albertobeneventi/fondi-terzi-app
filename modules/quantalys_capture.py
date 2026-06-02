@@ -23,7 +23,6 @@ def capture_quantalys_chart(qtl_url: str, force: bool = False) -> object:
     """
     Cattura screenshot del grafico storico Quantalys.
     Cache su file — se esiste già restituisce quello cached.
-    Restituisce bytes PNG oppure None in caso di errore.
     """
     if not qtl_url:
         return None
@@ -43,27 +42,64 @@ def capture_quantalys_chart(qtl_url: str, force: bool = False) -> object:
 
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page(viewport={"width": 1400, "height": 780})
-            page.goto(hist_url, wait_until="domcontentloaded", timeout=45_000)
+            # Lancia con args anti-bot detection (come browser reale)
+            browser = p.chromium.launch(
+                headless=True,
+                args=[
+                    "--disable-blink-features=AutomationControlled",
+                    "--no-sandbox",
+                    "--disable-dev-shm-usage",
+                    "--disable-web-security",
+                ]
+            )
+            # Contesto con user-agent realistico e lingua italiana
+            ctx = browser.new_context(
+                viewport={"width": 1400, "height": 780},
+                user_agent=(
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) "
+                    "Chrome/124.0.0.0 Safari/537.36"
+                ),
+                locale="it-IT",
+                timezone_id="Europe/Rome",
+                extra_http_headers={
+                    "Accept-Language": "it-IT,it;q=0.9,en;q=0.8",
+                }
+            )
+            page = ctx.new_page()
 
-            # Attende rendering grafici
+            # Prima visita alla home per acquisire cookie di sessione
             try:
-                page.wait_for_selector(".qtjs-panel-reloaded-graph svg", timeout=18_000)
+                page.goto("https://www.quantalys.it/", wait_until="domcontentloaded", timeout=15_000)
+                page.wait_for_timeout(1_500)
+                # Chiudi eventuale cookie banner
+                for txt in ["Ok, accetta tutto", "Accetta tutto", "Accetta", "Accept all"]:
+                    cb = page.locator(f"button:has-text('{txt}')")
+                    if cb.count() > 0:
+                        cb.first.click()
+                        page.wait_for_timeout(500)
+                        break
             except Exception:
                 pass
-            page.wait_for_timeout(3_000)
 
-            # Chiude cookie banner se presente
+            # Naviga alla pagina Historique
+            page.goto(hist_url, wait_until="domcontentloaded", timeout=45_000)
+
+            # Attende rendering amCharts
             try:
-                cb = page.locator(
-                    "button:has-text('Ok, accetta tutto'),"
-                    "button:has-text('Accetta tutto'),"
-                    "button:has-text('Accept all')"
-                )
-                if cb.count() > 0:
-                    cb.first.click()
-                    page.wait_for_timeout(700)
+                page.wait_for_selector(".qtjs-panel-reloaded-graph svg", timeout=20_000)
+            except Exception:
+                pass
+            page.wait_for_timeout(4_000)
+
+            # Rimuovi overlay/banner se presenti
+            try:
+                for txt in ["Ok, accetta tutto", "Accetta tutto", "Accept all"]:
+                    cb = page.locator(f"button:has-text('{txt}')")
+                    if cb.count() > 0:
+                        cb.first.click()
+                        page.wait_for_timeout(700)
+                        break
             except Exception:
                 pass
 
@@ -73,9 +109,9 @@ def capture_quantalys_chart(qtl_url: str, force: bool = False) -> object:
                         || document.querySelector('[class*="qtjs-panel"]');
                 if (el) el.scrollIntoView({behavior:'instant', block:'start'});
             }""")
-            page.wait_for_timeout(400)
+            page.wait_for_timeout(500)
             page.mouse.move(10, 10)
-            page.wait_for_timeout(600)
+            page.wait_for_timeout(800)
 
             # Calcola bounds del pannello
             clip = page.evaluate("""() => {
@@ -93,7 +129,7 @@ def capture_quantalys_chart(qtl_url: str, force: bool = False) -> object:
                 return {
                     x: Math.max(0, Math.round(pr.left)),
                     y: Math.max(0, Math.round(pr.top)),
-                    width: Math.round(pr.width),
+                    width:  Math.round(pr.width),
                     height: toolbarY !== null ? (toolbarY - Math.round(pr.top)) : Math.round(pr.height)
                 };
             }""")
@@ -101,12 +137,15 @@ def capture_quantalys_chart(qtl_url: str, force: bool = False) -> object:
             if clip and clip.get("width", 0) > 100 and clip.get("height", 0) > 50:
                 png = page.screenshot(clip=clip)
             else:
+                # Fallback: screenshot dell'intera viewport
                 png = page.screenshot(full_page=False)
 
             browser.close()
 
-            cache_fp.write_bytes(png)
-            return png
+            if png and len(png) > 2000:
+                cache_fp.write_bytes(png)
+                return png
+            return None
 
     except Exception as e:
         print(f"[QTL capture] Errore per {hist_url}: {e}")
