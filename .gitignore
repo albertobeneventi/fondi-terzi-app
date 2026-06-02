@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+.streamlit/credentials.toml
+streamlit.log
+streamlit_err.log
+data/qtl_chart_cache/
+*.log
