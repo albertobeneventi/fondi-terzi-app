@@ -407,6 +407,7 @@ Il punteggio viene *amplificato* dal Rating FIDA (ogni stella aggiunge un moltip
                 save_portfolio(nome, scenario_sel, min_rating, funds)
                 st.success(f"✅ Salvato: '{nome}'")
             if b2.button("🖨️ Stampa PDF", key=f"pdf_{suffix}") and funds:
+                st.caption(f"🔍 Debug: schede={incl} | quantalys={incl_qtl} | fondi={len(funds_rich)}")
                 spin_msg = "Generazione PDF con grafici Quantalys (~30s per fondo)..." if incl_qtl else "Generazione PDF..."
                 with st.spinner(spin_msg):
                     try:
