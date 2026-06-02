@@ -76,16 +76,10 @@ def export_portfolio_excel(funds: list[dict], portfolio_name: str = "") -> bytes
             bd = Side(style="hair", color="BDD7EE")
             c.border = Border(bottom=bd, top=bd, left=bd, right=bd)
             if col == 4:
-                c.number_format = '#,##0.00'   # es. 30,00
+                c.number_format = '0.00'
         ws.row_dimensions[row].height = 16
 
-    # ── Riga totale peso ───────────────────────────────────────────────────────
-    total_row = len(funds_sorted) + 3
-    total_peso = round(sum(round(float(f.get("peso", 0)) * scale, 2) for f in funds_sorted), 2)
-    ws.cell(row=total_row, column=2, value="TOTALE").font = Font(bold=True, name="Calibri")
-    c_tot = ws.cell(row=total_row, column=4, value=total_peso)
-    c_tot.font = Font(bold=True, name="Calibri", color="CC0000" if abs(total_peso-100) > 0.1 else "166534")
-    c_tot.number_format = '#,##0.00'
+    # Nessuna riga totale
 
     # ── Foglio Datos (date disponibili) ────────────────────────────────────────
     ws2 = wb.create_sheet("Datos")
