@@ -220,14 +220,32 @@ with tab_portafogli:
                                             label_visibility="collapsed",
                                             key=f"ep_{suffix}_{isin_disp}_{idx}")
                     incl_f = c3.checkbox("✓", value=True, key=f"ei_{suffix}_{isin_disp}_{idx}")
-                    # Sostituzione: scegli fondo diverso nello stesso bucket
-                    same_bucket = df[df[COL["classif"]].apply(
-                        lambda x: classify_bucket(str(x)) == f.get("bucket","")
-                    ) & (df[COL["collocabile"]].astype(str).str.upper().str.strip() == "SI")]
+                    # Sostituzione: top 10 per qualità, max 2 per casa, escluso fondo corrente
+                    same_bucket = df[
+                        df[COL["classif"]].apply(lambda x: classify_bucket(str(x)) == f.get("bucket","")) &
+                        (df[COL["collocabile"]].astype(str).str.upper().str.strip() == "SI") &
+                        (df[COL["isin"]].astype(str).str.strip() != f["ISIN"])
+                    ].copy()
+                    # Escludi ISIN già presenti nel portafoglio corrente
+                    current_isins = {ff["ISIN"] for ff in edited}
+                    same_bucket = same_bucket[~same_bucket[COL["isin"]].astype(str).str.strip().isin(current_isins)]
+                    # Calcola quality score e ordina
+                    from modules.portfolio_manager import _quality_score as _qs
+                    same_bucket["_qscore"] = same_bucket.apply(_qs, axis=1)
+                    same_bucket["_house"]  = same_bucket[COL["house"]].astype(str).str.strip().str.upper()
+                    same_bucket = same_bucket.sort_values("_qscore", ascending=False)
+                    # Prendi top 10 con max 2 per casa
+                    top10, house_cnt = [], {}
+                    for _, r in same_bucket.iterrows():
+                        if len(top10) >= 10: break
+                        h = r["_house"]
+                        if house_cnt.get(h, 0) >= 2: continue
+                        top10.append(r)
+                        house_cnt[h] = house_cnt.get(h, 0) + 1
                     opts = ["— nessuna sostituzione —"] + [
-                        f"{r[COL['nome']][:50]} | {r[COL['isin']]}"
-                        for _, r in same_bucket.iterrows()
-                        if r[COL["isin"]] != f["ISIN"]
+                        f"{'★'*int(float(r[COL['rating']])) if r[COL['rating']] and str(r[COL['rating']]) not in ('nan','') else '—'} "
+                        f"{str(r[COL['nome']])[:45]} | {r[COL['isin']]}"
+                        for r in top10
                     ]
                     sub = c4.selectbox("Sostituisci con", opts, index=0,
                                        key=f"sub_{suffix}_{isin_disp}_{idx}",
