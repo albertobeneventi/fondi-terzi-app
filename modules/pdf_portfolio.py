@@ -164,7 +164,9 @@ def generate_portfolio_pdf(
     obl_pct = bucket_totals.get("Obbligazionari", 0)
     bal_pct = bucket_totals.get("Bilanciati/Flessibili", 0)
 
-    avg_retro = sum(f["retro"] for f in funds if f.get("retro") and str(f["retro"]) not in ("nan","None")) / max(1, sum(1 for f in funds if f.get("retro") and str(f["retro"]) not in ("nan","None")))
+    avg_perf_1y = sum(float(f["perf_1y"]) for f in funds
+                      if f.get("perf_1y") and str(f["perf_1y"]) not in ("nan","None","")) / \
+                  max(1, sum(1 for f in funds if f.get("perf_1y") and str(f["perf_1y"]) not in ("nan","None","")))
 
     def kpi_cell(v, l):
         return Paragraph(
@@ -175,7 +177,7 @@ def generate_portfolio_pdf(
         kpi_cell(str(n_fondi), "Fondi"),
         kpi_cell(f"{eq_pct:.1f}%", "Azionario"),
         kpi_cell(f"{obl_pct:.1f}%", "Obbligazionario"),
-        kpi_cell(f"{avg_retro*100:.2f}%", "Retro. media"),
+        kpi_cell(f"{avg_perf_1y*100:.1f}%", "Perf. 1Y media"),
     ]], colWidths=[PW / 4] * 4, rowHeights=[1.9 * cm])
     kpi.setStyle(TableStyle([
         ("BOX",        (0, 0), (-1, -1), 0.8, _BORDER),
@@ -250,15 +252,15 @@ def generate_portfolio_pdf(
     tbl_header = [
         Paragraph("Fondo / ISIN", HDR), Paragraph("Bucket", HDR),
         Paragraph("Peso", HDR), Paragraph("★", HDR),
-        Paragraph("Retro.", HDR), Paragraph("Perf. 1Y", HDR),
+        Paragraph("Cat. FIDA", HDR), Paragraph("Perf. 1Y", HDR),
         Paragraph("Perf. 3Y", HDR),
     ]
     tbl_data = [tbl_header]
     for f in sorted(funds, key=lambda x: (x.get("bucket", ""), -x.get("peso", 0))):
-        p1 = f.get("perf_1y")
-        p3 = f.get("perf_3y")
-        r  = f.get("retro")
+        p1   = f.get("perf_1y")
+        p3   = f.get("perf_3y")
         isin = f.get("ISIN", "")
+        cat  = str(f.get("classif","") or "—")[:25]
         nome_isin = Paragraph(
             f"{f.get('nome','')[:38]}<br/>"
             f"<font size='6' color='#94A3B8'>{isin}</font>", SML)
@@ -299,48 +301,70 @@ def generate_portfolio_pdf(
                 Paragraph(f.get("nome", ""), FS),
                 Paragraph(
                     f"Casa: {f.get('house', '—')}  ·  ISIN: {f.get('ISIN', '—')}  ·  "
-                    f"Bucket: {f.get('bucket', '—')}  ·  Peso: {f.get('peso', 0):.1f}%", FK),
+                    f"Bucket: {f.get('bucket', '—')}  ·  Peso: {f.get('peso', 0):.1f}%  ·  "
+                    f"Acc./Distr.: {f.get('acc_dist','—')}", FK),
                 Spacer(1, 4),
             ]
 
-            # Metriche in riga
+            # Classificazione FIDA
+            if f.get("classif") and str(f["classif"]) not in ("nan","None",""):
+                card.append(Paragraph(
+                    f"Cat. FIDA: {f['classif']}", FK))
+                card.append(Spacer(1, 4))
+
+            # Metriche: stile tabella Azimut (senza retro)
             met_data = [[
-                Paragraph("Rating FIDA", HDR), Paragraph("Retro.", HDR),
-                Paragraph("Perf. 1Y", HDR), Paragraph("Perf. 3Y", HDR),
-                Paragraph("Volatilità", HDR),
+                Paragraph("Rating FIDA", HDR),
+                Paragraph("Perf. YTD", HDR),
+                Paragraph("Perf. 1Y", HDR),
+                Paragraph("Perf. 3Y", HDR),
+                Paragraph("Perf. 2024", HDR),
+                Paragraph("Perf. 2023", HDR),
+                Paragraph("Volatilità 1Y", HDR),
             ], [
                 Paragraph(_stars(f.get("rating")), SM),
-                Paragraph(_pct(f.get("retro")), SM),
-                Paragraph(_pct(f.get("perf_1y")), SM),
-                Paragraph(_pct(f.get("perf_3y")), SM),
-                Paragraph("—", SM),
+                _pc(f.get("perf_ytd")),
+                _pc(f.get("perf_1y")),
+                _pc(f.get("perf_3y")),
+                _pc(f.get("perf_2024")),
+                _pc(f.get("perf_2023")),
+                Paragraph(_pct(f.get("volatilita")), SM),
             ]]
-            met_tbl = Table(met_data, colWidths=[PW / 5] * 5)
+            met_tbl = Table(met_data, colWidths=[PW / 7] * 7)
             met_tbl.setStyle(TableStyle([
                 ("BACKGROUND",    (0, 0), (-1, 0), _BLUE),
                 ("ROWBACKGROUNDS",(0, 1), (-1, -1), [_LIGHT]),
                 ("GRID",          (0, 0), (-1, -1), 0.4, _BORDER),
-                ("PADDING",       (0, 0), (-1, -1), 5),
+                ("PADDING",       (0, 0), (-1, -1), 4),
                 ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
             ]))
             card.append(met_tbl)
 
-            # Classificazione
-            if f.get("classif") and str(f["classif"]) not in ("nan", "None", ""):
-                card.append(Spacer(1, 4))
-                card.append(Paragraph(f"Classificazione: {f['classif']}", FK))
+            # Grafico Quantalys (come app Azimut)
+            if qly_url and qly_url.lower() not in ("nan","none",""):
+                try:
+                    from .quantalys_capture import capture_quantalys_chart
+                    from PIL import Image as _PILImage
+                    png = capture_quantalys_chart(qly_url)
+                    if png:
+                        pil = _PILImage.open(io.BytesIO(png))
+                        w_px, h_px = pil.size
+                        aspect = h_px / w_px if w_px > 0 else 0.5
+                        img_w = PW
+                        img_h = min(img_w * aspect, 7 * cm)
+                        card.append(Spacer(1, 6))
+                        card.append(Paragraph(
+                            "Analisi Quantalys · Serie Storica & Performance", FK))
+                        from reportlab.platypus import Image as _RLImg
+                        card.append(_RLImg(io.BytesIO(png), width=img_w, height=img_h))
+                except Exception:
+                    pass  # Grafico opzionale: non blocca il PDF
 
-            # Link
-            links = []
-            if fd_url and fd_url.lower() not in ("nan", "none", ""):
-                links.append(Paragraph(
-                    f'FondiDoc: <link href="{fd_url}" color="#1B4FBB">{fd_url[:70]}</link>', LK))
-            if qly_url and qly_url.lower() not in ("nan", "none", ""):
-                links.append(Paragraph(
-                    f'Quantalys: <link href="{qly_url}" color="#1B4FBB">{qly_url[:70]}</link>', LK))
-            if links:
+            # Link FondiDoc
+            if fd_url and fd_url.lower() not in ("nan","none",""):
                 card.append(Spacer(1, 4))
-                card += links
+                card.append(Paragraph(
+                    f'<link href="{fd_url}" color="#1B4FBB">Scheda FondiDoc</link>', LK))
 
             card.append(HRFlowable(width="100%", thickness=0.4, color=_BORDER, spaceAfter=2))
             story.append(KeepTogether(card))
