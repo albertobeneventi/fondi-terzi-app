@@ -236,55 +236,115 @@ def generate_portfolio_pdf(
     story.append(pie_layout)
     story.append(Spacer(1, 10))
 
-    # ── TABELLA RIASSUNTIVA ──────────────────────────────────────────────────
+    # ── TABELLA COMPOSIZIONE — stile identico ad Azimut Portfolio Analyzer ────
     story.append(Paragraph("Composizione del Portafoglio", SC))
 
+    # Stili helper
+    SMC = ParagraphStyle("SMC", fontName="Helvetica", fontSize=7.5,
+                         textColor=rl_colors.HexColor("#1E293B"), leading=11, alignment=1)
+    WH  = ParagraphStyle("WH",  fontName="Helvetica-Bold", fontSize=7.5,
+                         textColor=_WHITE, leading=11, alignment=0)
+    WHC = ParagraphStyle("WHC", fontName="Helvetica-Bold", fontSize=7.5,
+                         textColor=_WHITE, leading=11, alignment=1)
+    HDRC= ParagraphStyle("HDRC",fontName="Helvetica-Bold", fontSize=7.5,
+                         textColor=_WHITE, leading=11, alignment=1)
+
+    # Colori FIDA badge (come app Azimut)
+    _FIDA_BG = {"5": "#166534", "4": "#15803d", "3": "#16a34a"}
+
+    def _fida_para(val):
+        v = str(val).strip()
+        if v in _FIDA_BG:
+            return Paragraph(v, ParagraphStyle(f"FP{v}", fontName="Helvetica-Bold",
+                fontSize=7.5, textColor=_WHITE, leading=11, alignment=1))
+        if v in ("1","2"):
+            return Paragraph(v, ParagraphStyle(f"FP{v}", fontName="Helvetica-Bold",
+                fontSize=7.5, textColor=_DARK, leading=11, alignment=1))
+        return Paragraph("—", SM)
+
     def _pc(v):
-        if v is None or str(v) in ("nan", "None"): return Paragraph("—", SM)
+        if v is None or str(v) in ("nan","None",""): return Paragraph("—", SMC)
         try:
             pv = float(v) * 100
-            color = "#059669" if pv >= 0 else "#DC2626"
-            sign  = "+" if pv >= 0 else ""
-            return Paragraph(f'<font color="{color}">{sign}{pv:.1f}%</font>', SM)
+            col = "#059669" if pv >= 0 else "#DC2626"
+            sgn = "+" if pv >= 0 else ""
+            return Paragraph(f'<font color="{col}">{sgn}{pv:.1f}%</font>', SMC)
         except Exception:
-            return Paragraph("—", SM)
+            return Paragraph("—", SMC)
 
-    tbl_header = [
-        Paragraph("Fondo / ISIN", HDR), Paragraph("Bucket", HDR),
-        Paragraph("Peso", HDR), Paragraph("★", HDR),
-        Paragraph("Cat. FIDA", HDR), Paragraph("Perf. 1Y", HDR),
-        Paragraph("Perf. 3Y", HDR),
+    # Calcola % Az/Obb approssimata dal bucket
+    _AZ_OBB = {"Azionari":(1.0,0.0),"Obbligazionari":(0.0,1.0),
+               "Bilanciati/Flessibili":(0.5,0.5),"Altro":(0.3,0.7)}
+
+    # Righe portafoglio (medie ponderate)
+    w_az_ptf = sum(f.get("peso",0)*_AZ_OBB.get(f.get("bucket","Altro"),(0.5,0.5))[0]
+                   for f in funds) / max(total_peso, 1)
+    w_ob_ptf = sum(f.get("peso",0)*_AZ_OBB.get(f.get("bucket","Altro"),(0.5,0.5))[1]
+                   for f in funds) / max(total_peso, 1)
+
+    # Header — colonne: Fondo | ISIN | Peso | %Az | %Obb | Cat.FIDA | FIDArtg | Perf1Y | Perf3Y
+    alloc_hdr = [
+        Paragraph("<b>Fondo</b>",        HDR),
+        Paragraph("<b>ISIN</b>",         HDR),
+        Paragraph("<b>Peso</b>",         HDR),
+        Paragraph("<b>% Az.</b>",       HDRC),
+        Paragraph("<b>% Obb.</b>",      HDRC),
+        Paragraph("<b>Cat. FIDA</b>",    HDR),
+        Paragraph("<b>FIDArtg</b>",     HDRC),
+        Paragraph("<b>Perf. 1Y</b>",    HDRC),
+        Paragraph("<b>Perf. 3Y</b>",    HDRC),
     ]
-    tbl_data = [tbl_header]
-    for f in sorted(funds, key=lambda x: (x.get("bucket", ""), -x.get("peso", 0))):
-        p1   = f.get("perf_1y")
-        p3   = f.get("perf_3y")
-        isin = f.get("ISIN", "")
-        cat  = str(f.get("classif","") or "—")[:25]
-        nome_isin = Paragraph(
-            f"{f.get('nome','')[:38]}<br/>"
-            f"<font size='6' color='#94A3B8'>{isin}</font>", SML)
+    # Riga portafoglio
+    alloc_ptf = [
+        Paragraph(f"<b>◆ PORTAFOGLIO {portfolio_name.upper()[:25]}</b>", WH),
+        Paragraph("", WH),
+        Paragraph("<b>100%</b>", WH),
+        Paragraph(f"<b>{w_az_ptf*100:.1f}%</b>", WHC),
+        Paragraph(f"<b>{w_ob_ptf*100:.1f}%</b>", WHC),
+        Paragraph("", WH), Paragraph("", WH), Paragraph("", WH), Paragraph("", WH),
+    ]
 
-        tbl_data.append([
-            nome_isin,
-            Paragraph(f.get("bucket", "")[:14], SM),
-            Paragraph(f"{f.get('peso', 0):.1f}%", SM),
-            Paragraph(_stars(f.get("rating")), SM),
-            Paragraph(cat, SM),
-            _pc(p1),
-            _pc(p3),
+    alloc_rows = []
+    fida_vals  = []
+    for f in sorted(funds, key=lambda x: (x.get("bucket",""), -x.get("peso",0))):
+        az_p, ob_p = _AZ_OBB.get(f.get("bucket","Altro"), (0.5, 0.5))
+        fida_val   = str(f.get("rating","") or "—").strip().split(".")[0]
+        fida_vals.append(fida_val)
+        cat = str(f.get("classif","") or "—")[:22]
+        alloc_rows.append([
+            Paragraph(f.get("nome","")[:42],                    SML),
+            Paragraph(f.get("ISIN",""),                         SM),
+            Paragraph(f"{f.get('peso',0):.1f}%",               SM),
+            Paragraph(f"{az_p*100:.0f}%",                      SMC),
+            Paragraph(f"{ob_p*100:.0f}%",                      SMC),
+            Paragraph(cat,                                       SM),
+            _fida_para(fida_val),
+            _pc(f.get("perf_1y")),
+            _pc(f.get("perf_3y")),
         ])
 
-    col_ws = [6.2*cm, 2.6*cm, 1.3*cm, 1.3*cm, 1.5*cm, 1.5*cm, 1.5*cm]  # tot = 15.9cm < PW=19cm
-    tbl = Table(tbl_data, colWidths=col_ws, repeatRows=1)
-    tbl.setStyle(TableStyle([
-        ("BACKGROUND",    (0, 0), (-1, 0), _BLUE),
-        ("TEXTCOLOR",     (0, 0), (-1, 0), _WHITE),
-        ("ROWBACKGROUNDS",(0, 1), (-1, -1), [_LIGHT, _WHITE]),
+    # Fondo(3.3) ISIN(2.4) Peso(1.1) %Az(1.3) %Obb(1.3) Cat(2.2) FIDArtg(1.3) P1Y(1.5) P3Y(1.5) = 15.9cm
+    col_ws = [3.3*cm, 2.4*cm, 1.1*cm, 1.3*cm, 1.3*cm, 2.2*cm, 1.3*cm, 1.5*cm, 1.5*cm]
+
+    tbl = Table([alloc_hdr, alloc_ptf] + alloc_rows, colWidths=col_ws, repeatRows=1)
+
+    # Stile base
+    tbl_style = [
+        ("BACKGROUND",    (0, 0), (-1,  0), _BLUE),
+        ("BACKGROUND",    (0, 1), (-1,  1), _DARK),
+        ("ROWBACKGROUNDS",(0, 2), (-1, -1), [_LIGHT, _WHITE]),
         ("GRID",          (0, 0), (-1, -1), 0.4, _BORDER),
-        ("PADDING",       (0, 0), (-1, -1), 5),
+        ("PADDING",       (0, 0), (-1, -1), 4),
         ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
-    ]))
+        ("ALIGN",         (2, 0), (-1, -1), "CENTER"),
+    ]
+    # Badge FIDA colorati per riga
+    for fi, fv in enumerate(fida_vals):
+        bg = _FIDA_BG.get(fv)
+        if bg:
+            tbl_style.append(("BACKGROUND", (6, fi+2), (6, fi+2), rl_colors.HexColor(bg)))
+
+    tbl.setStyle(TableStyle(tbl_style))
     story.append(tbl)
 
     # ── SCHEDE FONDI (opzionale) ─────────────────────────────────────────────
