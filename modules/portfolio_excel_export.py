@@ -40,7 +40,7 @@ def export_portfolio_excel(funds: list[dict], portfolio_name: str = "") -> bytes
     ws.row_dimensions[1].height = 80
 
     # ── Header riga 1 (nomi colonne) ───────────────────────────────────────────
-    col_names = ["Composition date", "ISIN", "Instrument name", "Weight"]
+    col_names = ["Composition date", "ISIN", "", "Weight"]
     for col, name in enumerate(col_names, 1):
         c = ws.cell(row=2, column=col, value=name)
         c.font = Font(bold=True, name="Calibri", size=10)
@@ -62,11 +62,11 @@ def export_portfolio_excel(funds: list[dict], portfolio_name: str = "") -> bytes
         row = i + 3
         isin  = str(f.get("ISIN", "")).strip()
         nome  = str(f.get("nome", "")).strip()[:100]
-        peso  = round(float(f.get("peso", 0)) * scale)
+        peso  = round(float(f.get("peso", 0)) * scale, 2)
 
         bg = "F2F7FF" if i % 2 == 0 else "FFFFFF"
-
-        cells_data = [today, isin, nome, peso]
+        # Colonne: Data | ISIN | (vuota) | Peso
+        cells_data = [today, isin, "", peso]
         for col, val in enumerate(cells_data, 1):
             c = ws.cell(row=row, column=col, value=val)
             c.fill = PatternFill("solid", fgColor=bg)
@@ -76,16 +76,16 @@ def export_portfolio_excel(funds: list[dict], portfolio_name: str = "") -> bytes
             bd = Side(style="hair", color="BDD7EE")
             c.border = Border(bottom=bd, top=bd, left=bd, right=bd)
             if col == 4:
-                c.number_format = "0"
+                c.number_format = '#,##0.00'   # es. 30,00
         ws.row_dimensions[row].height = 16
 
     # ── Riga totale peso ───────────────────────────────────────────────────────
     total_row = len(funds_sorted) + 3
-    total_peso = sum(round(float(f.get("peso", 0)) * scale) for f in funds_sorted)
-    ws.cell(row=total_row, column=3, value="TOTALE").font = Font(bold=True, name="Calibri")
+    total_peso = round(sum(round(float(f.get("peso", 0)) * scale, 2) for f in funds_sorted), 2)
+    ws.cell(row=total_row, column=2, value="TOTALE").font = Font(bold=True, name="Calibri")
     c_tot = ws.cell(row=total_row, column=4, value=total_peso)
     c_tot.font = Font(bold=True, name="Calibri", color="CC0000" if abs(total_peso-100) > 0.1 else "166534")
-    c_tot.number_format = "0.0000"
+    c_tot.number_format = '#,##0.00'
 
     # ── Foglio Datos (date disponibili) ────────────────────────────────────────
     ws2 = wb.create_sheet("Datos")
