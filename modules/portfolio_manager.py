@@ -296,6 +296,9 @@ def _select_bucket_funds(
         lambda r: _geo_area(str(r.get(COL["nome"],"")), str(r.get(COL["classif"],""))), axis=1
     )
     df_b["_p3_ok"]   = pd.to_numeric(df_b[COL["perf_3y"]], errors="coerce").fillna(0) >= 0
+    # Rileva classi con copertura valutaria (hedged)
+    _HDG_RE = re.compile(r'\b(EURHDG|USDHDG|GBPHDG|CHFHDG|CADHDG|HDG|HEDG|HEDGED|COPER)\b', re.I)
+    df_b["_is_hedged"] = df_b[COL["nome"]].astype(str).apply(lambda n: bool(_HDG_RE.search(n)))
 
     # Ordina: globali prima, poi primary_col, poi secondary_col
     df_sorted = df_b.sort_values(
@@ -319,10 +322,12 @@ def _select_bucket_funds(
     geo_counts:   dict[str, int] = {}
     used_subcats: set[str] = set()
     used_roots:   set[str] = set()
-    dist_count = 0
-    n_total = max(n, 1)
+    dist_count  = 0
+    hedge_count = 0
+    n_total   = max(n, 1)
     max_house = max(1, round(n_total * max_house_pct))
     max_geo   = max(1, round(n_total * max_geo_pct))
+    max_hedge = max(1, n_total // 2)  # max 50% hedged per bucket
 
     for _, row in df_sorted.iterrows():
         if len(selected) >= n:
@@ -330,13 +335,16 @@ def _select_bucket_funds(
         house   = row["_house"]
         subcat  = row["_subcat"]
         root    = row["_root"]
-        geo     = row["_geo"]
-        is_dist = bool(row["_is_dist"])
+        geo       = row["_geo"]
+        is_dist   = bool(row["_is_dist"])
+        is_hedged = bool(row.get("_is_hedged", False))
 
         if house_counts.get(house, 0)  >= max_house:  continue
         if subcat in used_subcats:                     continue
         if root   in used_roots:                       continue
         if geo_counts.get(geo, 0) >= max_geo:          continue
+        # Vincolo: max 50% classi hedged per bucket
+        if is_hedged and hedge_count >= max_hedge:     continue
         # Rispetta target distribuzione: se già al target non aggiungere altri dist,
         # se target non ancora raggiunto preferisce dist; se target=0 esclude dist
         if target_dist_pct == 0 and is_dist:
@@ -357,8 +365,8 @@ def _select_bucket_funds(
         geo_counts[geo]      = geo_counts.get(geo, 0) + 1
         used_subcats.add(subcat)
         used_roots.add(root)
-        if is_dist:
-            dist_count += 1
+        if is_dist:   dist_count  += 1
+        if is_hedged: hedge_count += 1
 
     # Fallback progressivo: allenta vincoli uno per volta se non abbiamo N fondi
     if len(selected) < n:
