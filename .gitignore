@@ -3,5 +3,5 @@ __pycache__/
 .streamlit/credentials.toml
 streamlit.log
 streamlit_err.log
-data/qtl_chart_cache/
+# data/qtl_chart_cache/  # inclusa nel repo per Streamlit Cloud
 *.log
