@@ -128,7 +128,7 @@ with tab_portafogli:
             min_rating = st.selectbox(
                 "Rating FIDA minimo",
                 options=[0, 1, 2, 3, 4, 5],
-                index=2,   # default: 3 stelle
+                index=3,   # default: ★★★
                 format_func=lambda x: "Tutti" if x == 0 else "★" * x + "☆" * (5 - x),
                 key="ptf_min_rating"
             )
@@ -148,6 +148,12 @@ with tab_portafogli:
 
         sc = SCENARIOS[scenario_sel]
         st.info(f"**{scenario_sel}** — {sc['descrizione']}")
+        st.caption(
+            "ℹ️ **Criteri di selezione**: per ogni categoria (Azionari/Obbligazionari/Bilanciati) "
+            "vengono scelti i fondi **collocabili** con rating ≥ minimo, ordinati per il criterio selezionato. "
+            "I pesi sono distribuiti equamente tra i fondi della stessa categoria. "
+            "Puoi modificare i pesi manualmente prima di salvare."
+        )
 
         # Pesi scenario (compatibile con GP cache e valori hardcoded)
         d = sc.get("dettaglio", {})
