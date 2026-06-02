@@ -313,38 +313,115 @@ with tab_update:
 
     # ── Sezione 1: Catalogo PDF ───────────────────────────────────────────────
     st.markdown("### 📄 Catalogo Fondi (PDF mensile)")
-    st.info(
-        f"Deposita il PDF aggiornato del catalogo nella cartella:\n\n"
-        f"**`{MONTHLY_FILES_DIR}`**\n\n"
-        "Il file deve contenere 'CATALOGO' nel nome (es. `CATALOGO AFB X INTRANET 31.05.2026.pdf`).\n"
-        "Poi clicca **Aggiorna da PDF** per aggiungere i nuovi fondi e rimuovere quelli non più presenti."
+
+    uploaded_pdf = st.file_uploader(
+        "Carica il PDF aggiornato del catalogo",
+        type=["pdf"],
+        help="Il PDF del catalogo AFB mensile (es. CATALOGO AFB X INTRANET 31.05.2026.pdf)",
+        key="upload_catalog_pdf"
     )
 
-    # Lista PDF disponibili nella cartella monthly
-    pdf_files = sorted([f for f in MONTHLY_FILES_DIR.glob("*.pdf")
-                        if "catalogo" in f.name.lower() or "afb" in f.name.lower()],
-                       reverse=True)
+    if uploaded_pdf:
+        import tempfile, os as _os
+        st.success(f"File caricato: **{uploaded_pdf.name}** ({uploaded_pdf.size/1024:.0f} KB)")
 
-    if pdf_files:
-        sel_pdf = st.selectbox(
-            "PDF disponibili in cartella", [f.name for f in pdf_files], key="sel_catalog_pdf"
-        )
-        if st.button("🔄 Aggiorna da PDF catalogo", key="btn_update_pdf", type="primary"):
-            pdf_path = str(MONTHLY_FILES_DIR / sel_pdf)
-            with st.spinner(f"Elaborazione {sel_pdf}..."):
-                result = _sp.run(
-                    ["C:/Users/benev/AppData/Local/Programs/Python/Python312/python.exe",
-                     "C:/Users/benev/update_from_pdf.py"],
-                    capture_output=True, text=True, encoding="utf-8",
-                    env={**__import__("os").environ, "CATALOG_PDF": pdf_path}
-                )
-            if result.returncode == 0:
-                st.success("Catalogo aggiornato. Riavvia l'app per caricare i nuovi dati.")
-                st.code(result.stdout[-1000:])
-            else:
-                st.error(f"Errore: {result.stderr[-500:]}")
-    else:
-        st.warning(f"Nessun PDF trovato in `{MONTHLY_FILES_DIR}`. Copia lì il file del catalogo.")
+        if st.button("🔄 Aggiorna fondi dal PDF", key="btn_update_pdf", type="primary"):
+            # Salva PDF in temp file e lancia lo script di aggiornamento
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                tmp.write(uploaded_pdf.read())
+                tmp_path = tmp.name
+
+            with st.spinner("Analisi PDF e aggiornamento fondi... (~1 minuto)"):
+                # Import diretto per evitare dipendenza da percorsi locali
+                try:
+                    import fitz, re
+                    from modules.data_loader import load_data
+
+                    ISIN_RE   = re.compile(r'^[A-Z]{2}[A-Z0-9]{10}$')
+                    NOT_HOUSE = re.compile(r'^(SI|NO|\d[\d,\.]*|-|$)', re.I)
+                    SKIP = {"ASSET MANAGEMENT HOUSE","FONDO/SICAV","ISIN","DESCRIZIONE FONDO",
+                            "CLASSE","DIVISA FONDO","COMMISSIONE DI GESTIONE",
+                            "COMMISSIONE DI DISTRIBUZIONE","COMMISSIONE TOTALE",
+                            "COMMENTI","% BPS *ANNUI CF","Trasferibile","Collocabile",
+                            "Azimut Capital Management SGR"}
+
+                    doc = fitz.open(tmp_path)
+                    rows = []
+                    for pg in range(len(doc)):
+                        lines = [l.strip() for l in doc[pg].get_text().split('\n')
+                                 if l.strip() and l.strip() not in SKIP]
+                        i = 0
+                        while i < len(lines):
+                            if ISIN_RE.match(lines[i]):
+                                isin = lines[i]
+                                cands = []
+                                j = i-1
+                                while j >= max(0,i-6) and len(cands) < 2:
+                                    if not NOT_HOUSE.match(lines[j]) and not ISIN_RE.match(lines[j]):
+                                        cands.insert(0, lines[j])
+                                    j -= 1
+                                house = cands[-2] if len(cands)>=2 else (cands[0] if cands else "")
+                                sicav = cands[-1] if cands else ""
+                                desc   = lines[i+1] if i+1<len(lines) else ""
+                                classe = lines[i+2] if i+2<len(lines) else ""
+                                divisa = lines[i+3] if i+3<len(lines) else ""
+                                bps, trasf, colloc = None,"",""
+                                for k in range(i+4, min(i+14,len(lines))):
+                                    v = lines[k].strip()
+                                    if bps is None and re.match(r'^\d+[,\.]?\d*$',v):
+                                        try: bps=float(v.replace(',','.'))
+                                        except: pass
+                                    if v in ("SI","NO") and not trasf: trasf=v
+                                    elif v in ("SI","NO") and trasf and not colloc: colloc=v
+                                rows.append({"ISIN":isin,"ASSET MANAGEMENT HOUSE ":house,
+                                             "FONDO/SICAV":sicav,"DESCRIZIONE FONDO":desc,
+                                             "CLASSE":classe,"DIVISA FONDO         ":divisa,
+                                             " % BPS *ANNUI CF ":bps,
+                                             "Traferibile":trasf,"Collocabile":colloc})
+                            i+=1
+
+                    pdf_df = pd.DataFrame(rows).drop_duplicates(subset="ISIN")
+                    pdf_isins = set(pdf_df["ISIN"].astype(str).str.strip())
+
+                    # Leggi Excel corrente
+                    xls_path = _Path(__file__).parent / "data" / "fondi.xlsx"
+                    sheets   = pd.read_excel(xls_path, sheet_name=None, dtype=str)
+                    main     = sheets["tutti quelli trasferibili"]
+                    main.columns = [str(c).strip() for c in main.columns]
+                    xls_isins = set(main["ISIN"].astype(str).str.strip())
+
+                    rimossi = xls_isins - pdf_isins
+                    nuovi   = pdf_isins - xls_isins
+
+                    # Rimuovi vecchi, aggiungi nuovi
+                    main = main[main["ISIN"].astype(str).str.strip().isin(pdf_isins)]
+                    if nuovi:
+                        pdf_new = pdf_df[pdf_df["ISIN"].isin(nuovi)].copy()
+                        for col in main.columns:
+                            if col not in pdf_new.columns: pdf_new[col] = None
+                        pdf_new = pdf_new[[c for c in main.columns if c in pdf_new.columns]]
+                        main = pd.concat([main, pdf_new], ignore_index=True)
+
+                    sheets["tutti quelli trasferibili"] = main
+                    if "quelli gestibili" in sheets:
+                        sheets["quelli gestibili"] = main
+
+                    with pd.ExcelWriter(xls_path, engine="openpyxl") as writer:
+                        for sn, df in sheets.items():
+                            df.to_excel(writer, sheet_name=sn, index=False)
+
+                    # Salva anche in monthly_files con nome originale
+                    dest = MONTHLY_FILES_DIR / uploaded_pdf.name
+                    dest.write_bytes(_Path(tmp_path).read_bytes())
+
+                    st.success(f"✅ Aggiornato: **{len(rimossi)} rimossi**, **{len(nuovi)} aggiunti**. "
+                               f"Totale: {len(main):,} fondi.")
+                    st.cache_data.clear()
+                except Exception as e:
+                    st.error(f"Errore: {e}")
+                finally:
+                    try: _os.unlink(tmp_path)
+                    except: pass
 
     st.divider()
 
