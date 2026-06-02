@@ -188,29 +188,75 @@ with tab_portafogli:
                 st.session_state["ptf_scenario_name"] = scenario_sel
 
         def _render_variant(funds: list, suffix: str):
-            """Renderizza una variante portafoglio: analisi + salva + PDF."""
+            """Renderizza una variante portafoglio: modifica + analisi + salva + PDF."""
             if not funds:
                 st.info("Nessun fondo trovato con i criteri selezionati.")
                 return
 
-            # ── Analisi stile Azimut (tabelle HTML) ──────────────────────────
-            # Arricchisci i fondi con i dati da df_all (volatilità, perf annuali, acc_dist)
-            isin_to_row = {str(r.get(COL["isin"],"")).strip(): r
-                           for _, r in df_all.iterrows()}
-            funds_rich = []
-            for f in funds:
+            # ── Arricchisci fondi ─────────────────────────────────────────────
+            isin_to_row = {str(r.get(COL["isin"],"")).strip(): r for _, r in df_all.iterrows()}
+            def _enrich(f):
                 row = isin_to_row.get(f["ISIN"], {})
-                enriched = dict(f)
-                for k, col in [("perf_ytd", COL["perf_ytd"]),
-                                ("perf_3y",  COL["perf_3y"]),
-                                ("perf_2024",COL["perf_2024"]),
-                                ("perf_2023",COL["perf_2023"]),
-                                ("perf_2022",COL["perf_2022"]),
-                                ("volatilita",COL["volatilita"]),
-                                ("acc_dist", COL["acc_dist"])]:
-                    enriched[k] = row.get(col)
-                funds_rich.append(enriched)
+                out = dict(f)
+                for k, col in [("perf_ytd",COL["perf_ytd"]),("perf_3y",COL["perf_3y"]),
+                                ("perf_2024",COL["perf_2024"]),("perf_2023",COL["perf_2023"]),
+                                ("perf_2022",COL["perf_2022"]),("volatilita",COL["volatilita"]),
+                                ("acc_dist",COL["acc_dist"])]:
+                    out[k] = row.get(col)
+                return out
 
+            # ── Modifica pesi e sostituzione fondi ────────────────────────────
+            with st.expander("✏️ Modifica pesi e sostituisci fondi", expanded=False):
+                st.caption("Modifica i pesi, deseleziona fondi da escludere, o sostituisci con un altro fondo dal catalogo.")
+                # Indice fondi del catalogo per bucket
+                edited = list(st.session_state.get(f"edited_{suffix}", funds))
+                new_funds = []
+                for idx, f in enumerate(edited):
+                    c1, c2, c3, c4 = st.columns([3, 1, 1, 3])
+                    isin_disp = f.get("ISIN","")
+                    c1.markdown(f"**{f['nome'][:40]}**  \n`{isin_disp}`")
+                    new_p = c2.number_input("Peso%", value=float(f.get("peso",0)),
+                                            min_value=0.0, max_value=100.0, step=0.5,
+                                            label_visibility="collapsed",
+                                            key=f"ep_{suffix}_{isin_disp}_{idx}")
+                    incl_f = c3.checkbox("✓", value=True, key=f"ei_{suffix}_{isin_disp}_{idx}")
+                    # Sostituzione: scegli fondo diverso nello stesso bucket
+                    same_bucket = df[df[COL["classif"]].apply(
+                        lambda x: classify_bucket(str(x)) == f.get("bucket","")
+                    ) & (df[COL["collocabile"]].astype(str).str.upper().str.strip() == "SI")]
+                    opts = ["— nessuna sostituzione —"] + [
+                        f"{r[COL['nome']][:50]} | {r[COL['isin']]}"
+                        for _, r in same_bucket.iterrows()
+                        if r[COL["isin"]] != f["ISIN"]
+                    ]
+                    sub = c4.selectbox("Sostituisci con", opts, index=0,
+                                       key=f"sub_{suffix}_{isin_disp}_{idx}",
+                                       label_visibility="collapsed")
+                    if incl_f:
+                        if sub != "— nessuna sostituzione —":
+                            new_isin = sub.split(" | ")[-1].strip()
+                            new_row = isin_to_row.get(new_isin, {})
+                            repl = {
+                                "ISIN": new_isin,
+                                "nome": str(new_row.get(COL["nome"],"")),
+                                "house": str(new_row.get(COL["house"],"")),
+                                "bucket": f.get("bucket",""),
+                                "peso": new_p,
+                                "rating": new_row.get(COL["rating"]),
+                                "retro": new_row.get(COL["retro"]),
+                                "perf_1y": new_row.get(COL["perf_1y"]),
+                                "classif": str(new_row.get(COL["classif"],"")),
+                                "url_fondidoc": str(new_row.get(COL["url_fondidoc"],"") or ""),
+                                "url_quantalys": str(new_row.get(COL["url_quantalys"],"") or ""),
+                            }
+                            new_funds.append(repl)
+                        else:
+                            new_funds.append({**f, "peso": new_p})
+                st.session_state[f"edited_{suffix}"] = new_funds if new_funds else funds
+                funds = new_funds if new_funds else funds
+
+            # ── Analisi stile Azimut ──────────────────────────────────────────
+            funds_rich = [_enrich(f) for f in funds]
             render_portfolio_analysis(funds_rich)
 
             st.divider()
@@ -227,18 +273,12 @@ with tab_portafogli:
                 with st.spinner("Generazione PDF..."):
                     try:
                         pdf_bytes = generate_portfolio_pdf(
-                            nome or "Portafoglio",
-                            scenario_sel,
-                            funds_rich,
+                            nome or "Portafoglio", scenario_sel, funds_rich,
                             include_fund_cards=incl,
                         )
-                        b2.download_button(
-                            "⬇️ Scarica PDF",
-                            data=pdf_bytes,
-                            file_name=f"portafoglio_{datetime.date.today()}.pdf",
-                            mime="application/pdf",
-                            key=f"dl_{suffix}"
-                        )
+                        b2.download_button("⬇️ Scarica PDF", data=pdf_bytes,
+                                           file_name=f"portafoglio_{datetime.date.today()}.pdf",
+                                           mime="application/pdf", key=f"dl_{suffix}")
                     except Exception as e:
                         st.error(f"Errore PDF: {e}")
 

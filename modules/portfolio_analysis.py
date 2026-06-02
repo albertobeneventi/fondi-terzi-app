@@ -117,7 +117,7 @@ def render_portfolio_analysis(funds: list[dict]):
     with tab_scomp:
         hdr = (
             f"<tr>"
-            f"<th style='{_TH}text-align:left;'>Fondo</th>"
+            f"<th style='{_TH}text-align:left;'>Fondo / ISIN</th>"
             f"<th style='{_TH}text-align:center;'>Peso</th>"
             f"<th style='{_TH}text-align:center;'>% Az.</th>"
             f"<th style='{_TH}text-align:center;'>% Obb.</th>"
@@ -131,9 +131,12 @@ def render_portfolio_analysis(funds: list[dict]):
             az_p, ob_p = _BUCKET_AZ.get(f.get("bucket","Altro"), (0.5, 0.5))
             globe = "🌍 " if f.get("is_global") else ""
             bg = "#F8FAFC" if i % 2 == 0 else "#FFFFFF"
+            isin = f.get("ISIN","")
+            nome_cell = (f"{globe}{_fund_link(f.get('nome',''), f.get('url_fondidoc',''))}"
+                        f"<br/><span style='font-size:10px;color:#94A3B8;'>{isin}</span>")
             body += (
                 f"<tr style='background:{bg};'>"
-                f"<td style='{_TC}'>{globe}{_fund_link(f.get('nome',''), f.get('url_fondidoc',''))}</td>"
+                f"<td style='{_TC}'>{nome_cell}</td>"
                 f"<td style='{_TC}text-align:center;color:#1B4FBB;font-weight:600;'>{f.get('peso',0):.1f}%</td>"
                 f"<td style='{_TC}text-align:center;'>{az_p*100:.0f}%</td>"
                 f"<td style='{_TC}text-align:center;'>{ob_p*100:.0f}%</td>"

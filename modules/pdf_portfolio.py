@@ -190,29 +190,39 @@ def generate_portfolio_pdf(
 
     # ── TORTA ALLOCAZIONE ────────────────────────────────────────────────────
     story.append(Paragraph("Allocazione del Portafoglio", SC))
-    PIE_W = 6.5 * cm
+    PIE_W = 6.0 * cm
     LEG_W = PW - PIE_W - 0.5 * cm
-    DOT_W = 0.3 * cm
+    DOT_W = 0.4 * cm
 
     pie_png = _pie_chart(funds)
     pie_img = RLImage(io.BytesIO(pie_png), width=PIE_W, height=PIE_W)
 
-    # Legenda fondi
+    # Legenda fondi (senza pallino separato — colorato direttamente nella cella)
     leg_rows = []
     for f in sorted(funds, key=lambda x: -x.get("peso", 0)):
         color = _BUCKET_COLORS.get(f.get("bucket", "Altro"), "#94A3B8")
-        dot = Table([[""]], colWidths=[DOT_W], rowHeights=[DOT_W])
-        dot.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), rl_colors.HexColor(color))]))
+        dot = Table([[""]], colWidths=[DOT_W], rowHeights=[DOT_W + 0.1*cm])
+        dot.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, -1), rl_colors.HexColor(color)),
+            ("LEFTPADDING",  (0,0),(-1,-1), 0),
+            ("RIGHTPADDING", (0,0),(-1,-1), 0),
+        ]))
         nome_short = f.get("nome", "")[:45]
+        isin_short = f.get("ISIN", "")
         leg_rows.append([dot,
-                         Paragraph(nome_short, LG),
+                         Paragraph(f"{nome_short}<br/><font size='6' color='#94A3B8'>{isin_short}</font>", LG),
                          Paragraph(f"{f.get('peso', 0):.1f}%", LG)])
 
-    leg_table = Table(leg_rows, colWidths=[DOT_W, LEG_W - 2.0 * cm, 1.8 * cm])
+    leg_table = Table(leg_rows, colWidths=[DOT_W, LEG_W - 1.8*cm, 1.6*cm])
     leg_table.setStyle(TableStyle([
-        ("VALIGN",  (0, 0), (-1, -1), "MIDDLE"),
-        ("PADDING", (0, 0), (-1, -1), 3),
+        ("VALIGN",       (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING",  (0, 0), (-1, -1), 4),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+        ("TOPPADDING",   (0, 0), (-1, -1), 2),
+        ("BOTTOMPADDING",(0, 0), (-1, -1), 2),
         ("ROWBACKGROUNDS", (0, 0), (-1, -1), [_LIGHT, _WHITE]),
+        ("LEFTPADDING",  (0, 0), (0, -1), 0),
+        ("RIGHTPADDING", (0, 0), (0, -1), 0),
     ]))
 
     pie_layout = Table([[pie_img, leg_table]],
@@ -227,9 +237,19 @@ def generate_portfolio_pdf(
     # ── TABELLA RIASSUNTIVA ──────────────────────────────────────────────────
     story.append(Paragraph("Composizione del Portafoglio", SC))
 
+    def _pc(v):
+        if v is None or str(v) in ("nan", "None"): return Paragraph("—", SM)
+        try:
+            pv = float(v) * 100
+            color = "#059669" if pv >= 0 else "#DC2626"
+            sign  = "+" if pv >= 0 else ""
+            return Paragraph(f'<font color="{color}">{sign}{pv:.1f}%</font>', SM)
+        except Exception:
+            return Paragraph("—", SM)
+
     tbl_header = [
-        Paragraph("Fondo", HDR), Paragraph("Bucket", HDR),
-        Paragraph("Peso %", HDR), Paragraph("Rating", HDR),
+        Paragraph("Fondo / ISIN", HDR), Paragraph("Bucket", HDR),
+        Paragraph("Peso", HDR), Paragraph("★", HDR),
         Paragraph("Retro.", HDR), Paragraph("Perf. 1Y", HDR),
         Paragraph("Perf. 3Y", HDR),
     ]
@@ -238,19 +258,13 @@ def generate_portfolio_pdf(
         p1 = f.get("perf_1y")
         p3 = f.get("perf_3y")
         r  = f.get("retro")
-
-        def _pc(v):
-            if v is None or str(v) in ("nan", "None"): return Paragraph("—", SM)
-            try:
-                pv = float(v) * 100
-                color = "#059669" if pv >= 0 else "#DC2626"
-                sign  = "+" if pv >= 0 else ""
-                return Paragraph(f'<font color="{color}">{sign}{pv:.1f}%</font>', SM)
-            except Exception:
-                return Paragraph("—", SM)
+        isin = f.get("ISIN", "")
+        nome_isin = Paragraph(
+            f"{f.get('nome','')[:38]}<br/>"
+            f"<font size='6' color='#94A3B8'>{isin}</font>", SML)
 
         tbl_data.append([
-            Paragraph(f.get("nome", "")[:42], SML),
+            nome_isin,
             Paragraph(f.get("bucket", "")[:14], SM),
             Paragraph(f"{f.get('peso', 0):.1f}%", SM),
             Paragraph(_stars(f.get("rating")), SM),
@@ -259,7 +273,7 @@ def generate_portfolio_pdf(
             _pc(p3),
         ])
 
-    col_ws = [6.5*cm, 2.8*cm, 1.5*cm, 1.4*cm, 1.6*cm, 1.6*cm, 1.6*cm]
+    col_ws = [6.2*cm, 2.6*cm, 1.3*cm, 1.3*cm, 1.5*cm, 1.5*cm, 1.5*cm]  # tot = 15.9cm < PW=19cm
     tbl = Table(tbl_data, colWidths=col_ws, repeatRows=1)
     tbl.setStyle(TableStyle([
         ("BACKGROUND",    (0, 0), (-1, 0), _BLUE),
