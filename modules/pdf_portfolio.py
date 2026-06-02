@@ -270,7 +270,7 @@ def generate_portfolio_pdf(
             Paragraph(f.get("bucket", "")[:14], SM),
             Paragraph(f"{f.get('peso', 0):.1f}%", SM),
             Paragraph(_stars(f.get("rating")), SM),
-            _pc(r),
+            Paragraph(cat, SM),
             _pc(p1),
             _pc(p3),
         ])

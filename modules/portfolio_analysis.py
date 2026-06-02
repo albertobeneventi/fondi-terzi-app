@@ -178,10 +178,13 @@ def render_portfolio_analysis(funds: list[dict]):
         )
         body2 = ""
         for i, f in enumerate(funds):
-            bg = "#F8FAFC" if i % 2 == 0 else "#FFFFFF"
+            bg   = "#F8FAFC" if i % 2 == 0 else "#FFFFFF"
+            isin = f.get("ISIN","")
+            nome2 = (f"{_fund_link(f.get('nome',''), f.get('url_fondidoc',''))}"
+                     f"<br/><span style='font-size:10px;color:#94A3B8;'>{isin}</span>")
             body2 += (
                 f"<tr style='background:{bg};'>"
-                f"<td style='{_TC}'>{_fund_link(f.get('nome',''), f.get('url_fondidoc',''))}</td>"
+                f"<td style='{_TC}'>{nome2}</td>"
                 f"<td style='{_TC}text-align:center;color:#1B4FBB;font-weight:600;'>{f.get('peso',0):.1f}%</td>"
                 f"<td style='{_TC}text-align:center;'>{_perf_cell(f.get('perf_ytd'))}</td>"
                 f"<td style='{_TC}text-align:center;'>{_perf_cell(f.get('perf_1y'))}</td>"
@@ -211,25 +214,28 @@ def render_portfolio_analysis(funds: list[dict]):
     with tab_risk:
         hdr3 = (
             f"<tr>"
-            f"<th style='{_TH}text-align:left;'>Fondo</th>"
+            f"<th style='{_TH}text-align:left;'>Fondo / ISIN</th>"
             f"<th style='{_TH}text-align:center;'>Peso</th>"
             f"<th style='{_TH}text-align:center;'>Volatilità 1Y</th>"
             f"<th style='{_TH}text-align:center;'>FIDArating</th>"
             f"<th style='{_TH}text-align:center;'>Acc./Distr.</th>"
-            f"<th style='{_TH}text-align:center;'>Retrocessione</th>"
+            f"<th style='{_TH}text-align:center;'>Cat. FIDA</th>"
             f"</tr>"
         )
         body3 = ""
         for i, f in enumerate(funds):
-            bg = "#F8FAFC" if i % 2 == 0 else "#FFFFFF"
+            bg   = "#F8FAFC" if i % 2 == 0 else "#FFFFFF"
+            isin = f.get("ISIN","")
+            nome3 = (f"{_fund_link(f.get('nome',''), f.get('url_fondidoc',''))}"
+                     f"<br/><span style='font-size:10px;color:#94A3B8;'>{isin}</span>")
             body3 += (
                 f"<tr style='background:{bg};'>"
-                f"<td style='{_TC}'>{_fund_link(f.get('nome',''), f.get('url_fondidoc',''))}</td>"
+                f"<td style='{_TC}'>{nome3}</td>"
                 f"<td style='{_TC}text-align:center;color:#1B4FBB;font-weight:600;'>{f.get('peso',0):.1f}%</td>"
                 f"<td style='{_TC}text-align:center;'>{_perf_cell(f.get('volatilita'))}</td>"
                 f"<td style='{_TC}text-align:center;'>{_fida_badge(f.get('rating'))}</td>"
                 f"<td style='{_TC}text-align:center;color:#64748B;font-size:11px;'>{f.get('acc_dist','—')}</td>"
-                f"<td style='{_TC}text-align:center;'>{_perf_cell(f.get('retro'))}</td>"
+                f"<td style='{_TC}color:#64748B;font-size:11px;'>{str(f.get('classif','—'))[:30]}</td>"
                 f"</tr>"
             )
         st.markdown(
