@@ -25,11 +25,8 @@ except Exception:
     pass
 
 
-def load_scenarios_from_global_view(pdf_path: str) -> dict | None:
-    """
-    Carica scenari da un PDF Global View (settimanale).
-    Restituisce un dict scenario compatibile con SCENARIOS, oppure None in caso di errore.
-    """
+def load_scenarios_from_global_view(pdf_path: str) -> object:
+    """Carica scenario da PDF Global View Azimut (settimanale). Restituisce dict o None."""
     try:
         from .global_view_parser import parse_global_view
         gv = parse_global_view(pdf_path)
@@ -40,14 +37,13 @@ def load_scenarios_from_global_view(pdf_path: str) -> dict | None:
         summary    = gv["summary"]
         bond_pref  = gv.get("bond_pref", "")
         desc = (
-            f"Scenario basato su Azimut Global View {date_label}. "
-            f"{summary}. "
-            f"Pesi derivati dalle view: Equity {weights['Azionari']}% | "
+            f"Scenario basato su Azimut Global View {date_label}. {summary}. "
+            f"Pesi: Equity {weights['Azionari']}% | "
             f"Bond {weights['Obbligazionari']}% | "
             f"Bilanciati {weights['Bilanciati/Flessibili']}%."
         )
         return {
-            f"📡 Global View {date_label}": {
+            f"\U0001f4e1 Global View {date_label}": {
                 "descrizione": desc,
                 "pesi": weights,
                 "dettaglio": {
@@ -371,7 +367,7 @@ def suggest_portfolio(
     min_rating: int = 3,
     n_per_bucket: int = 3,
     sort_by: str = "retro",
-) -> list[dict]:
+) -> list:
     """Portafoglio singolo (legacy). Usa suggest_portfolio_dual per avere entrambe le varianti."""
     result_q, _ = suggest_portfolio_dual(df, scenario_key, min_rating, n_per_bucket)
     return result_q
@@ -383,7 +379,7 @@ def suggest_portfolio_dual(
     min_rating: int = 3,
     n_per_bucket: int = 3,
     max_dist_pct: float = 1.0,
-) -> tuple[list[dict], list[dict]]:
+) -> tuple:
     """
     Genera DUE portafogli per lo scenario selezionato, applicando i filtri sidebar già nel df.
 
@@ -406,7 +402,7 @@ def suggest_portfolio_dual(
     scenario    = SCENARIOS[scenario_key]
     pesi_bucket = scenario["pesi"]
 
-    def _build(primary_col: str, secondary_col: str) -> list[dict]:
+    def _build(primary_col: str, secondary_col: str) -> list:
         result = []
         for bucket, peso_tot in pesi_bucket.items():
             df_b = df.copy()
@@ -458,7 +454,7 @@ def suggest_portfolio(
     min_rating: int = 3,
     n_per_bucket: int = 3,
     sort_by: str = "retro",
-) -> list[dict]:
+) -> list:
     """Portafoglio singolo (legacy). Usa suggest_portfolio_dual per entrambe le varianti."""
     result_q, _ = suggest_portfolio_dual(df, scenario_key, min_rating, n_per_bucket)
     return result_q
