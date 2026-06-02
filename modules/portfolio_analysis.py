@@ -240,16 +240,40 @@ def render_portfolio_analysis(funds: list[dict]):
 
     # ── TAB 4: LINK ───────────────────────────────────────────────────────────
     with tab_links:
-        for f in funds:
-            fd  = f.get("url_fondidoc", "")
-            qly = f.get("url_quantalys", "")
-            c1, c2, c3 = st.columns([4, 2, 2])
-            c1.write(f.get("nome","")[:60])
-            if fd and str(fd).lower() not in ("nan","none",""):
-                c2.markdown(f"[📄 FondiDoc]({fd})")
-            else:
-                c2.write("—")
-            if qly and str(qly).lower() not in ("nan","none",""):
-                c3.markdown(f"[📊 Quantalys]({qly})")
-            else:
-                c3.write("—")
+        hdr4 = (
+            f"<tr>"
+            f"<th style='{_TH}text-align:left;'>Fondo / ISIN</th>"
+            f"<th style='{_TH}text-align:center;'>Peso</th>"
+            f"<th style='{_TH}text-align:center;'>Rating</th>"
+            f"<th style='{_TH}text-align:center;'>FondiDoc</th>"
+            f"<th style='{_TH}text-align:center;'>Quantalys</th>"
+            f"</tr>"
+        )
+        body4 = ""
+        for i, f in enumerate(funds):
+            bg   = "#F8FAFC" if i % 2 == 0 else "#FFFFFF"
+            fd   = f.get("url_fondidoc",  "") or ""
+            qly  = f.get("url_quantalys", "") or ""
+            isin = f.get("ISIN","")
+            nome_cell = (f"{_fund_link(f.get('nome',''), fd)}"
+                        f"<br/><span style='font-size:10px;color:#94A3B8;'>{isin}</span>")
+            fd_cell  = (f"<a href='{fd}' target='_blank' style='color:#2E86AB;text-decoration:none;'>📄 FondiDoc</a>"
+                        if fd and fd.lower() not in ("nan","none","") else
+                        "<span style='color:#CBD5E0;'>—</span>")
+            qly_cell = (f"<a href='{qly}' target='_blank' style='color:#2E86AB;text-decoration:none;'>📊 Quantalys</a>"
+                        if qly and qly.lower() not in ("nan","none","") else
+                        "<span style='color:#CBD5E0;'>—</span>")
+            body4 += (
+                f"<tr style='background:{bg};'>"
+                f"<td style='{_TC}'>{nome_cell}</td>"
+                f"<td style='{_TC}text-align:center;color:#1B4FBB;font-weight:600;'>{f.get('peso',0):.1f}%</td>"
+                f"<td style='{_TC}text-align:center;'>{_fida_badge(f.get('rating'))}</td>"
+                f"<td style='{_TC}text-align:center;'>{fd_cell}</td>"
+                f"<td style='{_TC}text-align:center;'>{qly_cell}</td>"
+                f"</tr>"
+            )
+        st.markdown(
+            f"<table style='width:100%;border-collapse:collapse;font-family:Arial,sans-serif;'>"
+            f"<thead>{hdr4}</thead><tbody>{body4}</tbody></table>",
+            unsafe_allow_html=True
+        )

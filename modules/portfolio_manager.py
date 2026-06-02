@@ -268,9 +268,9 @@ def _select_bucket_funds(
     n: int,
     primary_col: str,
     secondary_col: str,
-    max_house_pct: float = 0.34,   # max 1/3 = max 1 fondo su 3 per casa
-    max_dist_pct: float = 1.0,
-    max_geo_pct: float = 0.67,     # max 2/3 dalla stessa area geografica
+    max_house_pct: float = 0.34,
+    target_dist_pct: float = 0.0,  # quota TARGET distribuzione (0=solo acc, 1=solo dist)
+    max_geo_pct: float = 0.67,
 ) -> pd.DataFrame:
     """
     Seleziona n fondi da un bucket con tutti i vincoli professionali:
@@ -303,10 +303,15 @@ def _select_bucket_funds(
         ascending=[False, False, False]
     )
 
-    # Ordina: prima i fondi con perf_3Y ≥ 0, poi per primary, poi secondary
+    # Target distribuzione: quanti fondi a distribuzione vogliamo
+    n_dist_target = round(n * target_dist_pct)
+    n_acc_target  = n - n_dist_target
+
+    # Ordina: distribuzione prima se target > 0, poi perf_3Y ok, poi primary
+    df_b["_want_dist"] = df_b["_is_dist"] & (target_dist_pct > 0)
     df_sorted = df_b.sort_values(
-        ["_global", "_p3_ok", "_primary", "_secondary"],
-        ascending=[False, False, False, False]
+        ["_want_dist", "_global", "_p3_ok", "_primary", "_secondary"],
+        ascending=[False, False, False, False, False]
     )
 
     selected = []
@@ -332,9 +337,20 @@ def _select_bucket_funds(
         if subcat in used_subcats:                     continue
         if root   in used_roots:                       continue
         if geo_counts.get(geo, 0) >= max_geo:          continue
-        if is_dist and max_dist_pct < 1.0:
-            if len(selected) > 0 and (dist_count + 1) / n_total > max_dist_pct:
-                continue
+        # Rispetta target distribuzione: se già al target non aggiungere altri dist,
+        # se target non ancora raggiunto preferisce dist; se target=0 esclude dist
+        if target_dist_pct == 0 and is_dist:
+            continue  # solo accumulazione
+        if target_dist_pct == 1.0 and not is_dist:
+            continue  # solo distribuzione
+        if 0 < target_dist_pct < 1.0:
+            # Quanti dist e acc mancano ancora
+            dist_remaining = n_dist_target - dist_count
+            acc_remaining  = n_acc_target  - (len(selected) - dist_count)
+            if is_dist and dist_remaining <= 0:
+                continue  # già abbastanza dist
+            if not is_dist and acc_remaining <= 0:
+                continue  # già abbastanza acc
 
         selected.append(row)
         house_counts[house]  = house_counts.get(house, 0) + 1
@@ -378,7 +394,7 @@ def suggest_portfolio_dual(
     scenario_key: str,
     min_rating: int = 3,
     n_per_bucket: int = 3,
-    max_dist_pct: float = 1.0,
+    target_dist_pct: float = 0.0,
 ) -> tuple:
     """
     Genera DUE portafogli per lo scenario selezionato, applicando i filtri sidebar già nel df.
@@ -420,7 +436,7 @@ def suggest_portfolio_dual(
             df_b["_qscore"] = df_b.apply(_quality_score, axis=1)
 
             sel = _select_bucket_funds(df_b, n_per_bucket, primary_col, secondary_col,
-                                       max_dist_pct=max_dist_pct)
+                                       target_dist_pct=target_dist_pct)
             if sel.empty:
                 continue
 
