@@ -64,17 +64,13 @@ def export_portfolio_excel(funds: list[dict], portfolio_name: str = "") -> bytes
         nome  = str(f.get("nome", "")).strip()[:100]
         peso  = round(float(f.get("peso", 0)) * scale, 2)
 
-        bg = "F2F7FF" if i % 2 == 0 else "FFFFFF"
-        # Colonne: Data | ISIN | (vuota) | Peso
+        # Colonne: Data | ISIN | (vuota) | Peso — righe bianche senza colore
         cells_data = [today, isin, "", peso]
         for col, val in enumerate(cells_data, 1):
             c = ws.cell(row=row, column=col, value=val)
-            c.fill = PatternFill("solid", fgColor=bg)
             c.font = Font(name="Calibri", size=10)
             c.alignment = Alignment(vertical="center",
                                     horizontal="center" if col in (1, 2, 4) else "left")
-            bd = Side(style="hair", color="BDD7EE")
-            c.border = Border(bottom=bd, top=bd, left=bd, right=bd)
             if col == 4:
                 c.number_format = '0.00'
         ws.row_dimensions[row].height = 16
