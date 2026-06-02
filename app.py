@@ -39,6 +39,7 @@ from modules.portfolio_manager import (
     load_scenarios_from_global_view
 )
 from modules.portfolio_analysis import render_portfolio_analysis
+from modules.portfolio_excel_export import export_portfolio_excel
 from modules.pdf_portfolio import generate_portfolio_pdf
 
 # ── PAGE CONFIG ──────────────────────────────────────────────────────────────
@@ -407,10 +408,23 @@ Il punteggio viene *amplificato* dal Rating FIDA (ogni stella aggiunge un moltip
                                    key=f"incl_qtl_{suffix}",
                                    help="Aggiunge il grafico storico Quantalys per ogni fondo. "
                                         "Richiede ~20-30s per fondo.")
-            b1, b2 = st.columns(2)
+            b1, b2, b3 = st.columns(3)
             if b1.button("Salva portafoglio", key=f"save_{suffix}") and nome:
                 save_portfolio(nome, scenario_sel, min_rating, funds)
                 st.success(f"✅ Salvato: '{nome}'")
+            # Export Excel formato model-portfolios
+            try:
+                xlsx_bytes = export_portfolio_excel(funds, nome or "Portafoglio")
+                b3.download_button(
+                    "📊 Esporta Excel",
+                    data=xlsx_bytes,
+                    file_name=f"portfolio_{datetime.date.today().strftime('%Y%m%d')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key=f"xl_{suffix}",
+                    help="Formato model-portfolios-compositions-template"
+                )
+            except Exception as e:
+                b3.caption(f"Excel: {e}")
             if b2.button("🖨️ Stampa PDF", key=f"pdf_{suffix}") and funds:
                 st.caption(f"🔍 Debug: schede={incl} | quantalys={incl_qtl} | fondi={len(funds_rich)}")
                 spin_msg = "Generazione PDF con grafici Quantalys (~30s per fondo)..." if incl_qtl else "Generazione PDF..."
