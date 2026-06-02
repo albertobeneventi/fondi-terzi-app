@@ -97,6 +97,9 @@ def perf_chip(val):
 # ── CARICAMENTO DATI ─────────────────────────────────────────────────────────
 df_all = load_data()
 
+# ── FILTRI SIDEBAR (disponibili in tutti i tab) ──────────────────────────────
+df = render_filters(df_all)
+
 # ── NAVIGAZIONE TAB ──────────────────────────────────────────────────────────
 tab_ricerca, tab_portafogli, tab_update = st.tabs(["🔍 Ricerca", "📁 Portafogli", "⚙️ Aggiornamento"])
 
@@ -424,9 +427,6 @@ with tab_update:
 
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_ricerca:
-
-# ── SIDEBAR: FILTRI ──────────────────────────────────────────────────────────
-    df = render_filters(df_all)
 
 # ── HEADER ───────────────────────────────────────────────────────────────────
     st.markdown(f"""
