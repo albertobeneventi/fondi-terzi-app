@@ -68,22 +68,41 @@ def _load_scenarios_from_gp_cache() -> dict:
 
 
 def _default_scenarios() -> dict:
-    """Scenari hardcoded come fallback se GP cache non disponibile."""
+    """
+    Scenari indipendenti da GP: combinazione di profilo di rischio × outlook macro.
+    Usati quando il GP cache non è disponibile.
+    Basati su framework standard: Equity/Bond/Balanced con pesi calibrati sul profilo.
+    """
     return {
-        "🛡️ BEAR — Conflitto lungo": {
-            "descrizione": "Scenario recessivo. Prevalenza obbligazionaria, riduzione equity.",
-            "pesi": {"Obbligazionari": 51, "Bilanciati/Flessibili": 31, "Azionari": 18},
-            "dettaglio": {"Equity %": 22, "Bond %": 48, "Private Markets %": 30},
+        # ── Profili per outlook CAUTO (scenario di incertezza / bear) ────────
+        "🛡️ PRUDENTE — Outlook Cauto": {
+            "descrizione": (
+                "Profilo difensivo. Prevalenza obbligazionaria di qualità, "
+                "esposizione azionaria limitata a titoli globali difensivi. "
+                "Adatto a scenari di rallentamento o alta volatilità."
+            ),
+            "pesi": {"Obbligazionari": 55, "Bilanciati/Flessibili": 30, "Azionari": 15},
+            "dettaglio": {"Equity %": 15, "Bond %": 55, "Bilanciati %": 30},
         },
-        "⚖️ BASE — Incertezza geopolitica": {
-            "descrizione": "Portafoglio bilanciato con lieve cautela.",
-            "pesi": {"Bilanciati/Flessibili": 44, "Obbligazionari": 31, "Azionari": 24},
-            "dettaglio": {"Equity %": 32, "Bond %": 38, "Private Markets %": 30},
+        # ── Profilo BILANCIATO (scenario neutro / base) ───────────────────────
+        "⚖️ BILANCIATO — Outlook Neutro": {
+            "descrizione": (
+                "Profilo bilanciato classico. Mix equilibrato tra azionario globale, "
+                "obbligazionario diversificato e strategie flessibili. "
+                "Adatto a scenari di crescita moderata con incertezze."
+            ),
+            "pesi": {"Azionari": 35, "Obbligazionari": 35, "Bilanciati/Flessibili": 30},
+            "dettaglio": {"Equity %": 35, "Bond %": 35, "Bilanciati %": 30},
         },
-        "📈 BULL — Conflitto breve": {
-            "descrizione": "Sovrappeso azionario, normalizzazione commodity.",
-            "pesi": {"Azionari": 39, "Obbligazionari": 36, "Bilanciati/Flessibili": 26},
-            "dettaglio": {"Equity %": 40, "Bond %": 30, "Private Markets %": 30},
+        # ── Profilo DINAMICO (scenario costruttivo / bull) ────────────────────
+        "📈 DINAMICO — Outlook Costruttivo": {
+            "descrizione": (
+                "Profilo orientato alla crescita. Sovrappeso azionario globale e tematico, "
+                "obbligazionario ridotto a componente diversificante. "
+                "Adatto a scenari di espansione economica."
+            ),
+            "pesi": {"Azionari": 55, "Bilanciati/Flessibili": 25, "Obbligazionari": 20},
+            "dettaglio": {"Equity %": 55, "Bond %": 20, "Bilanciati %": 25},
         },
     }
 
@@ -123,20 +142,81 @@ _GLOBAL_RE = re.compile(
     re.I
 )
 
+# Macro-aree geografiche per diversificazione
+_GEO_MAP = [
+    ("US",       re.compile(r'\b(US|USA|AMERICA|AMERICAN|STATES|S&P|DOW)\b', re.I)),
+    ("EUROPE",   re.compile(r'\b(EUROPE|EURO|EUR|EUROPEAN)\b', re.I)),
+    ("EMERGING", re.compile(r'\b(EMERG|EM |DEVELOP|FRONTIER|ASIA|CHINA|INDIA|BRAZIL|LATIN)\b', re.I)),
+    ("JAPAN",    re.compile(r'\b(JAPAN|JAPANES|NIKKEI)\b', re.I)),
+    ("GLOBAL",   re.compile(r'\b(GLOBAL|WORLD|INTERNAZ|INTERNATION|MONDIALE)\b', re.I)),
+]
+
+def _geo_area(nome: str, classif: str) -> str:
+    """Estrae la macro-area geografica principale del fondo."""
+    text = (str(nome) + " " + str(classif)).upper()
+    for area, pattern in _GEO_MAP:
+        if pattern.search(text):
+            return area
+    return "OTHER"
+
 
 def _is_global(nome: str, classif: str) -> bool:
     """True se il fondo ha respiro globale/internazionale."""
     return bool(_GLOBAL_RE.search(str(nome)) or _GLOBAL_RE.search(str(classif)))
 
 
+def _consistency_bonus(row) -> float:
+    """
+    Bonus consistenza: premia chi non ha avuto anni fortemente negativi.
+    Penalizza ogni anno < -10%.
+    """
+    bonus = 0.0
+    for col in [COL["perf_2022"], COL["perf_2023"], COL["perf_2024"]]:
+        v = row.get(col)
+        if v is None or str(v) in ("nan", "None"):
+            continue
+        try:
+            pv = float(v)
+            if pv < -0.10:
+                bonus -= 0.5  # penalità anno molto negativo
+            elif pv > 0.05:
+                bonus += 0.1  # piccolo bonus anno positivo
+        except Exception:
+            pass
+    return bonus
+
+
 def _quality_score(row) -> float:
-    """Punteggio qualità: rating FIDA (peso 50%) + Sharpe proxy (perf/vol, 30%) + perf 1Y (20%)."""
+    """
+    Punteggio qualità professionale:
+    - FIDA rating (filtro duro, ma pesa anche nel ranking)
+    - Performance 3Y annualizzata (50%): più predittiva di 1Y
+    - Sortino proxy: perf_3Y / volatilità (downside-adjusted, 30%)
+    - Performance 1Y recente (20%)
+    - Bonus consistenza annuale (non avere anni molto negativi)
+    - Floor: se perf_3Y < 0 → punteggio dimezzato (non idealmente scelto)
+    """
     try:
         rat = float(row.get(COL["rating"]) or 0)
         p1  = float(row.get(COL["perf_1y"]) or 0)
-        vol = float(row.get(COL["volatilita"]) or 1)
-        sharpe = p1 / max(abs(vol), 0.01)
-        return rat * 2.0 + sharpe * 5.0 + p1 * 2.0
+        p3  = float(row.get(COL["perf_3y"]) or 0)
+        vol = max(float(row.get(COL["volatilita"]) or 0.10), 0.01)
+        sortino = p3 / vol   # Sortino proxy: perf_3Y / vol
+
+        # Pesi: 3Y (50%) + Sortino (30%) + 1Y (20%)
+        score = p3 * 5.0 + sortino * 3.0 + p1 * 2.0
+
+        # Bonus rating FIDA (amplificatore)
+        score *= (1 + rat * 0.15)
+
+        # Bonus consistenza anni precedenti
+        score += _consistency_bonus(row)
+
+        # Floor: perf_3Y negativa dimezza il punteggio
+        if p3 < 0:
+            score *= 0.5
+
+        return score
     except Exception:
         return 0.0
 
@@ -153,27 +233,34 @@ def _select_bucket_funds(
     n: int,
     primary_col: str,
     secondary_col: str,
-    max_house_pct: float = 0.5,
-    max_dist_pct: float = 1.0,  # quota massima fondi a distribuzione (0-1)
+    max_house_pct: float = 0.34,   # max 1/3 = max 1 fondo su 3 per casa
+    max_dist_pct: float = 1.0,
+    max_geo_pct: float = 0.67,     # max 2/3 dalla stessa area geografica
 ) -> pd.DataFrame:
     """
-    Seleziona n fondi da un bucket applicando i vincoli:
-    - Max max_house_pct fondi dalla stessa casa di gestione
-    - Max 1 fondo per sottoclassificazione FIDA (sempre, anche per fondi globali)
-    - Max 1 fondo con stessa radice strategia (es. ACC e MINC dello stesso fondo → 1 solo)
-    - Almeno 1 fondo globale/internazionale se disponibile
-    - Rispetta quota massima distribuzione sul totale
+    Seleziona n fondi da un bucket con tutti i vincoli professionali:
+    - Max 1 fondo per casa (max_house_pct ≈ 1/n)
+    - Max 1 per sottoclassificazione FIDA
+    - Max 1 per radice strategia (ACC e MINC = stesso fondo)
+    - Max 2/3 dalla stessa macro-area geografica
+    - Almeno 1 fondo globale/internazionale
+    - Quota massima distribuzione
+    - Preferenza per fondi con perf_3Y ≥ 0 (floor qualità)
     """
     df_b = df_b.copy()
     df_b["_primary"]   = pd.to_numeric(df_b[primary_col],   errors="coerce").fillna(0)
     df_b["_secondary"] = pd.to_numeric(df_b[secondary_col], errors="coerce").fillna(0)
-    df_b["_global"]    = df_b.apply(
+    df_b["_global"]  = df_b.apply(
         lambda r: _is_global(str(r.get(COL["nome"],"")), str(r.get(COL["classif"],""))), axis=1
     )
-    df_b["_house"]  = df_b[COL["house"]].astype(str).str.strip().str.upper()
-    df_b["_subcat"] = df_b[COL["classif"]].astype(str).str.strip().str.upper()
-    df_b["_root"]   = df_b[COL["nome"]].astype(str).apply(_fund_root)
-    df_b["_is_dist"]= df_b[COL["acc_dist"]].astype(str).str.upper().str.contains("DISTRIB", na=False)
+    df_b["_house"]   = df_b[COL["house"]].astype(str).str.strip().str.upper()
+    df_b["_subcat"]  = df_b[COL["classif"]].astype(str).str.strip().str.upper()
+    df_b["_root"]    = df_b[COL["nome"]].astype(str).apply(_fund_root)
+    df_b["_is_dist"] = df_b[COL["acc_dist"]].astype(str).str.upper().str.contains("DISTRIB", na=False)
+    df_b["_geo"]     = df_b.apply(
+        lambda r: _geo_area(str(r.get(COL["nome"],"")), str(r.get(COL["classif"],""))), axis=1
+    )
+    df_b["_p3_ok"]   = pd.to_numeric(df_b[COL["perf_3y"]], errors="coerce").fillna(0) >= 0
 
     # Ordina: globali prima, poi primary_col, poi secondary_col
     df_sorted = df_b.sort_values(
@@ -181,58 +268,59 @@ def _select_bucket_funds(
         ascending=[False, False, False]
     )
 
+    # Ordina: prima i fondi con perf_3Y ≥ 0, poi per primary, poi secondary
+    df_sorted = df_b.sort_values(
+        ["_global", "_p3_ok", "_primary", "_secondary"],
+        ascending=[False, False, False, False]
+    )
+
     selected = []
     house_counts: dict[str, int] = {}
+    geo_counts:   dict[str, int] = {}
     used_subcats: set[str] = set()
     used_roots:   set[str] = set()
     dist_count = 0
+    n_total = max(n, 1)
+    max_house = max(1, round(n_total * max_house_pct))
+    max_geo   = max(1, round(n_total * max_geo_pct))
 
     for _, row in df_sorted.iterrows():
         if len(selected) >= n:
             break
-        house  = row["_house"]
-        subcat = row["_subcat"]
-        root   = row["_root"]
+        house   = row["_house"]
+        subcat  = row["_subcat"]
+        root    = row["_root"]
+        geo     = row["_geo"]
         is_dist = bool(row["_is_dist"])
-        n_total = max(n, 1)
 
-        # Vincolo: max 50% stessa casa
-        if house_counts.get(house, 0) >= max(1, round(n_total * max_house_pct)):
-            continue
-        # Vincolo: 1 fondo per sottoclassificazione FIDA (senza eccezioni)
-        if subcat in used_subcats:
-            continue
-        # Vincolo: 1 fondo per radice strategia (evita ACC+MINC della stessa strategia)
-        if root in used_roots:
-            continue
-        # Vincolo quota distribuzione
+        if house_counts.get(house, 0)  >= max_house:  continue
+        if subcat in used_subcats:                     continue
+        if root   in used_roots:                       continue
+        if geo_counts.get(geo, 0) >= max_geo:          continue
         if is_dist and max_dist_pct < 1.0:
             if len(selected) > 0 and (dist_count + 1) / n_total > max_dist_pct:
                 continue
 
         selected.append(row)
-        house_counts[house] = house_counts.get(house, 0) + 1
+        house_counts[house]  = house_counts.get(house, 0) + 1
+        geo_counts[geo]      = geo_counts.get(geo, 0) + 1
         used_subcats.add(subcat)
         used_roots.add(root)
         if is_dist:
             dist_count += 1
 
-    # Fallback senza vincolo subcat se non abbiamo abbastanza fondi
+    # Fallback progressivo: allenta vincoli uno per volta se non abbiamo N fondi
     if len(selected) < n:
         selected_isins = {r[COL["isin"]] for r in selected}
         for _, row in df_sorted.iterrows():
-            if len(selected) >= n:
-                break
-            if row[COL["isin"]] in selected_isins:
-                continue
-            root  = row["_root"]
-            house = row["_house"]
-            if root in used_roots:
-                continue
-            if house_counts.get(house, 0) < max(1, round(n_total * max_house_pct)):
+            if len(selected) >= n: break
+            if row[COL["isin"]] in selected_isins: continue
+            if row["_root"] in used_roots: continue
+            h = row["_house"]
+            if house_counts.get(h, 0) < max_house:
                 selected.append(row)
-                house_counts[house] = house_counts.get(house, 0) + 1
-                used_roots.add(root)
+                house_counts[h] = house_counts.get(h, 0) + 1
+                used_roots.add(row["_root"])
                 selected_isins.add(row[COL["isin"]])
 
     return pd.DataFrame(selected) if selected else pd.DataFrame()
@@ -261,12 +349,13 @@ def suggest_portfolio_dual(
     Genera DUE portafogli per lo scenario selezionato, applicando i filtri sidebar già nel df.
 
     Portafoglio 1 — QUALITÀ:
-      Criterio primario: punteggio qualità (FIDA rating + Sharpe proxy)
-      Criterio secondario: retrocessione (a parità di qualità vince chi paga di più)
+      Primary: quality score multi-periodo (3Y 50% + Sortino 30% + 1Y 20% + consistenza)
+               amplificato da FIDA rating; floor: perf_3Y < 0 dimezza il punteggio
+      Secondary: retrocessione (a parità di qualità vince chi paga di più)
 
     Portafoglio 2 — RETROCESSIONE:
-      Criterio primario: retrocessione banca
-      Criterio secondario: punteggio qualità
+      Primary: retrocessione banca (massimizza l'interesse del distributore)
+      Secondary: quality score (garantisce un minimo di qualità)
 
     Vincoli (entrambi):
       - Solo fondi Collocabile = SI

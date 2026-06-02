@@ -123,8 +123,9 @@ with tab_portafogli:
         c1, c2, c3 = st.columns([2, 1, 1])
 
         with c1:
+            _sc_label = "Scenario — Global Perspectives" if _GP_CACHE_FILE.exists() else "Profilo di allocazione"
             scenario_sel = st.selectbox(
-                "Scenario macro (Global Perspectives Q2 2026)",
+                _sc_label,
                 options=list(SCENARIOS.keys()),
                 key="ptf_scenario"
             )
