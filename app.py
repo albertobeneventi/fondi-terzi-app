@@ -19,7 +19,8 @@ from modules.filters import render_filters
 from modules.pdf_generator import generate_fund_pdf
 from modules.portfolio_manager import (
     SCENARIOS, suggest_portfolio, save_portfolio,
-    load_portfolios, delete_portfolio, classify_bucket
+    load_portfolios, delete_portfolio, classify_bucket,
+    reload_scenarios, MONTHLY_FILES_DIR, _GP_CACHE_FILE
 )
 from modules.pdf_portfolio import generate_portfolio_pdf
 
@@ -96,7 +97,7 @@ def perf_chip(val):
 df_all = load_data()
 
 # ── NAVIGAZIONE TAB ──────────────────────────────────────────────────────────
-tab_ricerca, tab_portafogli = st.tabs(["🔍 Ricerca Fondi", "📁 Portafogli"])
+tab_ricerca, tab_portafogli, tab_update = st.tabs(["🔍 Ricerca", "📁 Portafogli", "⚙️ Aggiornamento"])
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 2: PORTAFOGLI
@@ -148,12 +149,12 @@ with tab_portafogli:
         sc = SCENARIOS[scenario_sel]
         st.info(f"**{scenario_sel}** — {sc['descrizione']}")
 
-        # Pesi scenario
-        d = sc["dettaglio"]
+        # Pesi scenario (compatibile con GP cache e valori hardcoded)
+        d = sc.get("dettaglio", {})
         wc = st.columns(3)
-        wc[0].metric("Equity %", f"{d['Equity %']}%")
-        wc[1].metric("Bond %", f"{d['Bond %']}%")
-        wc[2].metric("Private Markets %", f"{d['Private Markets %']}% (esclusi)")
+        wc[0].metric("Equity %",          f"{d.get('Equity %', '—')}{'%' if d.get('Equity %') else ''}")
+        wc[1].metric("Bond %",            f"{d.get('Bond %', '—')}{'%' if d.get('Bond %') else ''}")
+        wc[2].metric("Private Markets %", f"{d.get('Private Markets %', '30')}% (esclusi)")
 
         st.divider()
 
@@ -297,6 +298,91 @@ with tab_portafogli:
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 1: RICERCA FONDI
+# ══════════════════════════════════════════════════════════════════════════════
+# TAB 3: AGGIORNAMENTO DATI
+# ══════════════════════════════════════════════════════════════════════════════
+with tab_update:
+    import subprocess as _sp
+    from pathlib import Path as _Path
+
+    st.markdown(f"""
+        <div style='background:{COLOR_PRIMARY};padding:16px 20px;border-radius:10px;margin-bottom:20px;'>
+            <h2 style='color:white;margin:0;font-size:22px;'>⚙️ Aggiornamento Dati</h2>
+        </div>
+    """, unsafe_allow_html=True)
+
+    # ── Sezione 1: Catalogo PDF ───────────────────────────────────────────────
+    st.markdown("### 📄 Catalogo Fondi (PDF mensile)")
+    st.info(
+        f"Deposita il PDF aggiornato del catalogo nella cartella:\n\n"
+        f"**`{MONTHLY_FILES_DIR}`**\n\n"
+        "Il file deve contenere 'CATALOGO' nel nome (es. `CATALOGO AFB X INTRANET 31.05.2026.pdf`).\n"
+        "Poi clicca **Aggiorna da PDF** per aggiungere i nuovi fondi e rimuovere quelli non più presenti."
+    )
+
+    # Lista PDF disponibili nella cartella monthly
+    pdf_files = sorted([f for f in MONTHLY_FILES_DIR.glob("*.pdf")
+                        if "catalogo" in f.name.lower() or "afb" in f.name.lower()],
+                       reverse=True)
+
+    if pdf_files:
+        sel_pdf = st.selectbox(
+            "PDF disponibili in cartella", [f.name for f in pdf_files], key="sel_catalog_pdf"
+        )
+        if st.button("🔄 Aggiorna da PDF catalogo", key="btn_update_pdf", type="primary"):
+            pdf_path = str(MONTHLY_FILES_DIR / sel_pdf)
+            with st.spinner(f"Elaborazione {sel_pdf}..."):
+                result = _sp.run(
+                    ["C:/Users/benev/AppData/Local/Programs/Python/Python312/python.exe",
+                     "C:/Users/benev/update_from_pdf.py"],
+                    capture_output=True, text=True, encoding="utf-8",
+                    env={**__import__("os").environ, "CATALOG_PDF": pdf_path}
+                )
+            if result.returncode == 0:
+                st.success("Catalogo aggiornato. Riavvia l'app per caricare i nuovi dati.")
+                st.code(result.stdout[-1000:])
+            else:
+                st.error(f"Errore: {result.stderr[-500:]}")
+    else:
+        st.warning(f"Nessun PDF trovato in `{MONTHLY_FILES_DIR}`. Copia lì il file del catalogo.")
+
+    st.divider()
+
+    # ── Sezione 2: Global Perspectives ──────────────────────────────────────────
+    st.markdown("### 📊 Global Perspectives (scenari portafoglio)")
+    if _GP_CACHE_FILE.exists():
+        import json as _json
+        gp_meta = _json.loads(_GP_CACHE_FILE.read_text(encoding="utf-8-sig"))
+        st.success(
+            f"✅ GP caricato dall'app Azimut: **{gp_meta.get('filename','')}** "
+            f"(aggiornato: {gp_meta.get('last_updated','')})"
+        )
+        if st.button("🔃 Ricarica scenari dal GP", key="btn_reload_gp"):
+            new_sc = reload_scenarios()
+            st.success(f"Scenari aggiornati: {list(new_sc.keys())}")
+            st.rerun()
+    else:
+        st.warning(
+            "Global Perspectives non trovato. Carica il PDF nell'app **Azimut Portfolio Analyzer** — "
+            "gli scenari verranno automaticamente sincronizzati qui."
+        )
+
+    st.divider()
+
+    # ── Sezione 3: Aggiornamento mensile manuale ─────────────────────────────
+    st.markdown("### 🗓️ Aggiornamento performance manuale")
+    st.info(
+        "L'aggiornamento automatico è pianificato ogni **5 del mese alle 02:00** "
+        "tramite Windows Task Scheduler (aggiorna performance, volatilità e rating da fondidoc).\n\n"
+        "Puoi forzarlo ora cliccando il pulsante (richiede ~8 ore in background)."
+    )
+    if st.button("▶️ Avvia aggiornamento performance ora", key="btn_manual_update"):
+        _sp.Popen([
+            "C:/Users/benev/AppData/Local/Programs/Python/Python312/python.exe",
+            "C:/Users/benev/monthly_update.py"
+        ])
+        st.success("Aggiornamento avviato in background. Controlla `C:\\Users\\benev\\monthly_update.log`.")
+
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_ricerca:
 

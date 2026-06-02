@@ -81,14 +81,20 @@ def render_filters(df: pd.DataFrame) -> pd.DataFrame:
     st.sidebar.markdown("**🔄 Acc. / Distribuzione**")
     ad_col = COL["acc_dist"]
     if ad_col in df.columns:
-        ad_opts = sorted(df[ad_col].dropna().unique().tolist())
+        # Mostra solo 2 macro-opzioni: Accumulazione / Distribuzione
         sel_ad = st.sidebar.multiselect(
-            "Tipo", ad_opts,
+            "Tipo", ["ACCUMULAZIONE", "DISTRIBUZIONE"],
             placeholder="Tutti",
             key="filter_acc_dist"
         )
         if sel_ad:
-            mask &= df[ad_col].isin(sel_ad)
+            ad_mask = pd.Series([False] * len(df), index=df.index)
+            col_vals = df[ad_col].fillna("").str.upper()
+            if "ACCUMULAZIONE" in sel_ad:
+                ad_mask |= col_vals.str.contains("ACCUM", na=False)
+            if "DISTRIBUZIONE" in sel_ad:
+                ad_mask |= col_vals.str.contains("DISTRIB", na=False)
+            mask &= ad_mask
 
     st.sidebar.divider()
 
