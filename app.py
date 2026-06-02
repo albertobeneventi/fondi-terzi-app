@@ -20,7 +20,8 @@ from modules.pdf_generator import generate_fund_pdf
 from modules.portfolio_manager import (
     SCENARIOS, suggest_portfolio, suggest_portfolio_dual, save_portfolio,
     load_portfolios, delete_portfolio, classify_bucket,
-    reload_scenarios, MONTHLY_FILES_DIR, _GP_CACHE_FILE
+    reload_scenarios, MONTHLY_FILES_DIR, _GP_CACHE_FILE,
+    load_scenarios_from_global_view
 )
 from modules.portfolio_analysis import render_portfolio_analysis
 from modules.pdf_portfolio import generate_portfolio_pdf
@@ -120,15 +121,101 @@ with tab_portafogli:
 
     # ── TAB: Costruisci ───────────────────────────────────────────────────────
     with ptab1:
+
+        # ── Nota editoriale ──────────────────────────────────────────────────
+        with st.expander("📋 Nota metodologica — Criteri di selezione", expanded=False):
+            st.markdown(f"""
+**Nota redazionale** · Aggiornamento {datetime.date.today().strftime('%B %Y')}
+
+---
+
+**Universo eleggibile**
+- Fondi con **Collocabile = SI** e **Rating FIDA ≥ minimo** selezionato
+- Solo fondi che rispettano i filtri attivi nella sidebar
+
+**Score qualità (Portafoglio 1)**
+
+Il punteggio qualità è costruito su tre componenti con pesi differenziati:
+- **Performance 3Y annualizzata (50%)** — più predittiva del breve periodo
+- **Sortino proxy: Perf3Y / Volatilità (30%)** — premia chi gestisce bene il downside
+- **Performance 1Y recente (20%)** — segnale di momentum
+
+Il punteggio viene *amplificato* dal Rating FIDA (ogni stella aggiunge un moltiplicatore) e *dimezzato* per fondi con performance 3Y negativa (floor di qualità).
+
+**Bonus/malus di consistenza**: premia i fondi senza anni fortemente negativi (< -10%), penalizza chi ne ha avuti.
+
+**A parità di score qualità**: vince il fondo con retrocessione più alta (interesse del distributore compatibile con la qualità).
+
+---
+
+**Vincoli di diversificazione**
+- **Max 1 fondo per casa di gestione** per bucket (evita concentrazione)
+- **Max 1 fondo per sottoclassificazione FIDA** (evita duplicati tematici)
+- **Max 1 fondo per radice strategia** (evita ACC e MINC della stessa strategia)
+- **Max 2/3 dalla stessa macro-area geografica** (US / Europe / Emerging / Japan / Global)
+- **Almeno 1 fondo globale/internazionale** per bucket
+
+---
+
+**Quota distribuzione**: configurabile con slider (default 50% max)
+
+---
+
+**Portafoglio 2 — Retrocessione**: stessi vincoli, criterio primario = retrocessione banca, qualità come tiebreaker.
+
+---
+
+**Fonte scenari**: derivati da Azimut Global View / Global Perspectives o da profili di rischio standard (PRUDENTE / BILANCIATO / DINAMICO).
+            """)
+
+        # ── Upload Global View PDF ────────────────────────────────────────────
+        with st.expander("📡 Carica Global View per aggiornare lo scenario", expanded=False):
+            gv_upload = st.file_uploader("Carica PDF Global View (settimanale)",
+                                         type=["pdf"], key="gv_upload")
+            if gv_upload:
+                import tempfile, os as _os
+                with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                    tmp.write(gv_upload.read())
+                    tmp_path = tmp.name
+                try:
+                    gv_scenario = load_scenarios_from_global_view(tmp_path)
+                    if gv_scenario:
+                        st.session_state["gv_scenario"] = gv_scenario
+                        sc_name = list(gv_scenario.keys())[0]
+                        sc_data = gv_scenario[sc_name]
+                        st.success(f"✅ Scenario caricato: **{sc_name}**")
+                        st.caption(sc_data["descrizione"])
+                        # Mostra view
+                        rv = sc_data.get("raw_views", {})
+                        if rv:
+                            cols = st.columns(len(rv))
+                            _vcolor = {"OVER":"🟢","LIEVE_OVER":"🟡","NEUTRAL":"⚪","LIEVE_UNDER":"🟡","UNDER":"🔴"}
+                            for (k, v), col in zip(rv.items(), cols):
+                                col.metric(k, _vcolor.get(v,"⚪") + " " + v.replace("_"," ").title())
+                    else:
+                        st.error("Impossibile parsare il PDF. Assicurati che sia un Global View Azimut.")
+                except Exception as e:
+                    st.error(f"Errore: {e}")
+                finally:
+                    try: _os.unlink(tmp_path)
+                    except: pass
+
+        # Merge scenari: GP / Global View / default
+        _all_scenarios = dict(SCENARIOS)
+        if "gv_scenario" in st.session_state:
+            _all_scenarios = {**st.session_state["gv_scenario"], **_all_scenarios}
+
         c1, c2, c3 = st.columns([2, 1, 1])
 
         with c1:
-            _sc_label = "Scenario — Global Perspectives" if _GP_CACHE_FILE.exists() else "Profilo di allocazione"
+            _sc_label = "Scenario / Profilo di allocazione"
             scenario_sel = st.selectbox(
                 _sc_label,
-                options=list(SCENARIOS.keys()),
+                options=list(_all_scenarios.keys()),
                 key="ptf_scenario"
             )
+            # Aggiorna SCENARIOS usato per la generazione
+            _active_scenarios = _all_scenarios
         with c2:
             min_rating = st.selectbox(
                 "Rating FIDA minimo",
@@ -179,6 +266,9 @@ with tab_portafogli:
         )
 
         if st.button("🎯 Genera portafogli", key="btn_gen_ptf", type="primary"):
+            # Usa scenario da _all_scenarios (include Global View se caricato)
+            import modules.portfolio_manager as _pm
+            _pm.SCENARIOS = _active_scenarios
             ptf_q, ptf_r = suggest_portfolio_dual(df, scenario_sel, min_rating, n_per,
                                                    max_dist_pct=max_dist/100)
             if not ptf_q and not ptf_r:

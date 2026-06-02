@@ -25,6 +25,45 @@ except Exception:
     pass
 
 
+def load_scenarios_from_global_view(pdf_path: str) -> dict | None:
+    """
+    Carica scenari da un PDF Global View (settimanale).
+    Restituisce un dict scenario compatibile con SCENARIOS, oppure None in caso di errore.
+    """
+    try:
+        from .global_view_parser import parse_global_view
+        gv = parse_global_view(pdf_path)
+        if "error" in gv:
+            return None
+        date_label = gv.get("date", "")
+        weights    = gv["weights"]
+        summary    = gv["summary"]
+        bond_pref  = gv.get("bond_pref", "")
+        desc = (
+            f"Scenario basato su Azimut Global View {date_label}. "
+            f"{summary}. "
+            f"Pesi derivati dalle view: Equity {weights['Azionari']}% | "
+            f"Bond {weights['Obbligazionari']}% | "
+            f"Bilanciati {weights['Bilanciati/Flessibili']}%."
+        )
+        return {
+            f"📡 Global View {date_label}": {
+                "descrizione": desc,
+                "pesi": weights,
+                "dettaglio": {
+                    "Equity %":    weights["Azionari"],
+                    "Bond %":      weights["Obbligazionari"],
+                    "Bilanciati %":weights["Bilanciati/Flessibili"],
+                },
+                "bond_pref": bond_pref,
+                "raw_views": gv.get("raw_views", {}),
+            }
+        }
+    except Exception as e:
+        print(f"[GlobalView parser] {e}")
+        return None
+
+
 def _load_scenarios_from_gp_cache() -> dict:
     """
     Legge gli scenari dal gp_cache.json dell'app Azimut.
