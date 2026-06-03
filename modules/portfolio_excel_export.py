@@ -12,7 +12,7 @@ import openpyxl
 _TEMPLATE = Path(__file__).parent.parent / "data" / "model_portfolio_template.xlsx"
 
 
-def export_advisorelite_csv(funds: list[dict]) -> bytes:
+def export_advisorelite_csv(funds: list) -> bytes:
     """
     Genera CSV formato AdvisorElite:
       ISIN,Amount,
@@ -28,7 +28,7 @@ def export_advisorelite_csv(funds: list[dict]) -> bytes:
     return "\n".join(lines).encode("utf-8")
 
 
-def export_portfolio_excel(funds: list[dict], portfolio_name: str = "") -> bytes:
+def export_portfolio_excel(funds: list, portfolio_name: str = "") -> bytes:
     """
     Apre il template e compila le colonne:
       A = Data (DD/MM/YYYY)
