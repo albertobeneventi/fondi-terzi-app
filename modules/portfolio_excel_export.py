@@ -12,6 +12,22 @@ import openpyxl
 _TEMPLATE = Path(__file__).parent.parent / "data" / "model_portfolio_template.xlsx"
 
 
+def export_advisorelite_csv(funds: list[dict]) -> bytes:
+    """
+    Genera CSV formato AdvisorElite:
+      ISIN,Amount,
+      LU...,30
+    Pesi interi normalizzati a 100.
+    """
+    total = sum(float(f.get("peso", 0)) for f in funds) or 1
+    lines = ["ISIN,Amount,"]
+    for f in sorted(funds, key=lambda x: x.get("bucket","") + x.get("ISIN","")):
+        isin = str(f.get("ISIN","")).strip()
+        peso = round(float(f.get("peso", 0)) / total * 100)
+        lines.append(f"{isin},{peso}")
+    return "\n".join(lines).encode("utf-8")
+
+
 def export_portfolio_excel(funds: list[dict], portfolio_name: str = "") -> bytes:
     """
     Apre il template e compila le colonne:

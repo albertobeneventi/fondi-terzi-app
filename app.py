@@ -39,7 +39,7 @@ from modules.portfolio_manager import (
     load_scenarios_from_global_view
 )
 from modules.portfolio_analysis import render_portfolio_analysis
-from modules.portfolio_excel_export import export_portfolio_excel
+from modules.portfolio_excel_export import export_portfolio_excel, export_advisorelite_csv
 from modules.pdf_portfolio import generate_portfolio_pdf
 
 # ── PAGE CONFIG ──────────────────────────────────────────────────────────────
@@ -408,10 +408,22 @@ Il punteggio viene *amplificato* dal Rating FIDA (ogni stella aggiunge un moltip
                                    key=f"incl_qtl_{suffix}",
                                    help="Aggiunge il grafico storico Quantalys per ogni fondo. "
                                         "Richiede ~20-30s per fondo.")
-            b1, b2, b3 = st.columns(3)
+            b1, b2, b3, b4 = st.columns(4)
             if b1.button("Salva portafoglio", key=f"save_{suffix}") and nome:
                 save_portfolio(nome, scenario_sel, min_rating, funds)
                 st.success(f"✅ Salvato: '{nome}'")
+            # Export AdvisorElite CSV
+            try:
+                csv_bytes = export_advisorelite_csv(funds)
+                b4.download_button(
+                    "📋 File per AdvisorElite",
+                    data=csv_bytes,
+                    file_name="file per advisorelite.csv",
+                    mime="text/csv",
+                    key=f"csv_{suffix}",
+                )
+            except Exception as e:
+                b4.caption(f"CSV: {e}")
             # Export Excel formato model-portfolios
             try:
                 xlsx_bytes = export_portfolio_excel(funds, nome or "Portafoglio")
