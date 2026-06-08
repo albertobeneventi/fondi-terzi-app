@@ -307,6 +307,9 @@ Il punteggio viene *amplificato* dal Rating FIDA (ogni stella aggiunge un moltip
                 st.session_state["ptf_q"] = ptf_q
                 st.session_state["ptf_r"] = ptf_r
                 st.session_state["ptf_scenario_name"] = scenario_sel
+                # Reset delle versioni modificate manualmente, così il nuovo portafoglio è fresco
+                st.session_state.pop("edited_q", None)
+                st.session_state.pop("edited_r", None)
 
         def _render_variant(funds: list, suffix: str):
             """Renderizza una variante portafoglio: modifica + analisi + salva + PDF."""
