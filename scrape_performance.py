@@ -1,16 +1,20 @@
 # -*- coding: utf-8 -*-
 """
-Aggiorna performance + volatilita 1Y in data/fondi.xlsx scaricando da fondidoc.it.
-Pensato per girare in GitHub Actions (il 2 di ogni mese). Streamlit Cloud
-ridistribuisce automaticamente l'app al commit del file aggiornato.
+Aggiornamento UNIFICATO performance + volatilita 1Y da fondidoc.it.
+Scarica UNA volta sola e aggiorna entrambi i file (stessi ISIN/link FondiDoc):
 
-Schema file dell'app (header riga 1, dati da riga 2):
-  col 3  = ISIN
-  col 21 = PERF. 1 ANNO   col 22 = PERF. 3 ANNI   col 23 = PERF. YTD
-  col 24 = PERF. 2024     col 25 = PERF. 2023     col 26 = PERF. 2022
-  col 27 = VOLATILITA' (1 anno)
-  col 30 = SCHEDA FONDIDOC (link)
-L'app usa solo la scheda 'tutti quelli trasferibili'; 'quelli gestibili' e' un duplicato.
+  data/fondi.xlsx          -> usato dall'app Streamlit
+      header riga 1, dati da riga 2; ISIN col3; link FondiDoc col30;
+      perf col21=1Y,22=3Y,23=YTD,24=2024,25=2023,26=2022,27=VOL
+      schede 'tutti quelli trasferibili' (+ 'quelli gestibili' duplicato)
+
+  data/tabella_fondi.xlsx  -> file di lavoro (formato "tabella arricchita")
+      header riga 2, dati da riga 3; ISIN col3; link FondiDoc col23;
+      perf col14=1Y,15=3Y,16=YTD,17=2024,18=2023,19=2022,20=VOL
+      scheda 'tutti quelli trasferibili'
+
+Gira in GitHub Actions (il 2 di ogni mese). Streamlit Cloud ridistribuisce
+automaticamente l'app al commit.
 """
 import re, time, datetime
 from pathlib import Path
@@ -20,18 +24,26 @@ import requests
 from bs4 import BeautifulSoup
 import openpyxl
 
-BASE = Path(__file__).parent
-EXCEL = BASE / "data" / "fondi.xlsx"
-MAIN_SHEET = "tutti quelli trasferibili"
-MIRROR_SHEET = "quelli gestibili"
+BASE = Path(__file__).parent / "data"
 WORKERS = 12
-
-COL_ISIN = 3
-COL_FONDIDOC = 30
-# mappa colonna -> chiave dato
-MAPPING = {21: 'p1y', 22: 'p3y', 23: 'ytd', 24: 'p2024', 25: 'p2023', 26: 'p2022', 27: 'vol1y'}
-
 PERC_RE = re.compile(r'-?\d+[,.]\d+%')
+
+# configurazione per ciascun file: schema colonne, riga iniziale dati, schede
+FILES = [
+    {
+        "path": BASE / "fondi.xlsx",
+        "data_start": 2, "col_isin": 3, "col_fondidoc": 30,
+        "perf": {21: 'p1y', 22: 'p3y', 23: 'ytd', 24: 'p2024', 25: 'p2023', 26: 'p2022', 27: 'vol1y'},
+        "sheets": ["tutti quelli trasferibili", "quelli gestibili"],
+    },
+    {
+        "path": BASE / "tabella_fondi.xlsx",
+        "data_start": 3, "col_isin": 3, "col_fondidoc": 23,
+        "perf": {14: 'p1y', 15: 'p3y', 16: 'ytd', 17: 'p2024', 18: 'p2023', 19: 'p2022', 20: 'vol1y'},
+        "sheets": ["tutti quelli trasferibili"],
+    },
+]
+
 _tl = threading.local()
 
 
@@ -106,65 +118,80 @@ def scrape_fund(fd_url):
 def fondidoc_url(cell):
     if cell.hyperlink and cell.hyperlink.target:
         return cell.hyperlink.target
-    v = (cell.value or '')
+    v = cell.value
     return v if isinstance(v, str) and v.startswith('http') else None
 
 
-def main():
-    log(f"Apertura {EXCEL}")
-    wb = openpyxl.load_workbook(str(EXCEL))
-    ws = wb[MAIN_SHEET]
-
-    # raccogli URL FondiDoc (dedup) e ISIN->righe
-    url_by_isin = {}
-    for r in range(2, ws.max_row + 1):
-        isin = (ws.cell(r, COL_ISIN).value or '')
-        isin = str(isin).strip() if isin else ''
-        if not isin:
+def collect_isin_urls():
+    """Raccoglie ISIN->URL FondiDoc unendo entrambi i file (dedup per ISIN)."""
+    isin_url = {}
+    for cfg in FILES:
+        if not cfg["path"].exists():
             continue
-        u = fondidoc_url(ws.cell(r, COL_FONDIDOC))
-        if u and isin not in url_by_isin:
-            url_by_isin[isin] = u
-    log(f"ISIN con link FondiDoc: {len(url_by_isin)} (con {WORKERS} thread)")
+        wb = openpyxl.load_workbook(str(cfg["path"]), read_only=True)
+        ws = wb[cfg["sheets"][0]]
+        for r in range(cfg["data_start"], ws.max_row + 1):
+            iv = ws.cell(r, cfg["col_isin"]).value
+            iv = str(iv).strip() if iv else ''
+            if not iv or iv in isin_url:
+                continue
+            u = fondidoc_url(ws.cell(r, cfg["col_fondidoc"]))
+            if u:
+                isin_url[iv] = u
+        wb.close()
+    return isin_url
 
-    results = {}
+
+def main():
+    isin_url = collect_isin_urls()
+    log(f"ISIN unici con link FondiDoc: {len(isin_url)} (scrape con {WORKERS} thread)")
+
+    # scrape UNA volta sola, risultati per ISIN
+    by_isin = {}
     done = errors = 0
-    urls = {u for u in url_by_isin.values()}
+    rev = {}
+    for isin, u in isin_url.items():
+        rev.setdefault(u, isin)  # un URL -> un ISIN
     with ThreadPoolExecutor(max_workers=WORKERS) as ex:
-        futs = {ex.submit(scrape_fund, u): u for u in urls}
+        futs = {ex.submit(scrape_fund, u): u for u in rev}
         for n, fut in enumerate(as_completed(futs), 1):
+            u = futs[fut]
             try:
-                results[futs[fut]] = fut.result()
+                by_isin[rev[u]] = fut.result()
                 done += 1
             except Exception:
                 errors += 1
             if n % 500 == 0:
-                log(f"  {n}/{len(urls)} (ok {done}, err {errors})")
+                log(f"  {n}/{len(rev)} (ok {done}, err {errors})")
+    log(f"Scraping finito: ok {done}, err {errors}")
 
-    # scrivi nelle due schede (gestibili = duplicato)
-    for sheet in (MAIN_SHEET, MIRROR_SHEET):
-        if sheet not in wb.sheetnames:
+    # applica a ciascun file secondo il suo schema
+    for cfg in FILES:
+        if not cfg["path"].exists():
+            log(f"  SALTO {cfg['path'].name} (assente)")
             continue
-        w = wb[sheet]
-        upd = 0
-        for r in range(2, w.max_row + 1):
-            isin = (w.cell(r, COL_ISIN).value or '')
-            isin = str(isin).strip() if isin else ''
-            u = url_by_isin.get(isin)
-            d = results.get(u) if u else None
-            if not d:
+        wb = openpyxl.load_workbook(str(cfg["path"]))
+        for sheet in cfg["sheets"]:
+            if sheet not in wb.sheetnames:
                 continue
-            for col, key in MAPPING.items():
-                v = d.get(key)
-                if v is not None:
-                    c = w.cell(r, col)
-                    c.value = v
-                    c.number_format = '0.00%'
-            upd += 1
-        log(f"  '{sheet}': {upd} righe aggiornate")
-
-    wb.save(str(EXCEL))
-    log(f"FINITO. ok {done}, err {errors}. Salvato {EXCEL}.")
+            ws = wb[sheet]
+            upd = 0
+            for r in range(cfg["data_start"], ws.max_row + 1):
+                iv = ws.cell(r, cfg["col_isin"]).value
+                iv = str(iv).strip() if iv else ''
+                d = by_isin.get(iv)
+                if not d:
+                    continue
+                for col, key in cfg["perf"].items():
+                    v = d.get(key)
+                    if v is not None:
+                        c = ws.cell(r, col)
+                        c.value = v
+                        c.number_format = '0.00%'
+                upd += 1
+            log(f"  {cfg['path'].name} / '{sheet}': {upd} righe aggiornate")
+        wb.save(str(cfg["path"]))
+    log("FINITO.")
 
 
 if __name__ == "__main__":
