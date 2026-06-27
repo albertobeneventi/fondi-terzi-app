@@ -1,0 +1,38 @@
+name: Aggiornamento mensile performance (fondi.xlsx)
+
+on:
+  schedule:
+    - cron: "0 2 2 * *"   # il 2 di ogni mese, 02:00 UTC
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Installa dipendenze minime
+        run: pip install requests beautifulsoup4 openpyxl lxml
+
+      - name: Aggiorna performance in data/fondi.xlsx
+        run: python scrape_performance.py
+
+      - name: Commit del file aggiornato
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/fondi.xlsx
+          if git diff --staged --quiet; then
+            echo "Nessuna modifica."
+          else
+            git commit -m "Aggiornamento performance $(date +'%Y-%m-%d')"
+            git push
+          fi
