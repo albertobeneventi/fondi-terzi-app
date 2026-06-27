@@ -128,7 +128,7 @@ def collect_isin_urls():
     for cfg in FILES:
         if not cfg["path"].exists():
             continue
-        wb = openpyxl.load_workbook(str(cfg["path"]), read_only=True)
+        wb = openpyxl.load_workbook(str(cfg["path"]))  # niente read_only: servono gli hyperlink
         ws = wb[cfg["sheets"][0]]
         for r in range(cfg["data_start"], ws.max_row + 1):
             iv = ws.cell(r, cfg["col_isin"]).value
