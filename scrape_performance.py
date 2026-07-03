@@ -35,12 +35,14 @@ FILES = [
         "data_start": 2, "col_isin": 3, "col_fondidoc": 30,
         "perf": {21: 'p1y', 22: 'p3y', 23: 'ytd', 24: 'p2024', 25: 'p2023', 26: 'p2022', 27: 'vol1y'},
         "sheets": ["tutti quelli trasferibili", "quelli gestibili"],
+        "banner": False,  # header gia' in riga 1, nessun banner
     },
     {
         "path": BASE / "tabella_fondi.xlsx",
         "data_start": 3, "col_isin": 3, "col_fondidoc": 23,
         "perf": {14: 'p1y', 15: 'p3y', 16: 'ytd', 17: 'p2024', 18: 'p2023', 19: 'p2022', 20: 'vol1y'},
         "sheets": ["tutti quelli trasferibili"],
+        "banner": True,  # A1 = "Dati di performance aggiornati al: ..."
     },
 ]
 
@@ -165,6 +167,10 @@ def main():
                 log(f"  {n}/{len(rev)} (ok {done}, err {errors})")
     log(f"Scraping finito: ok {done}, err {errors}")
 
+    # data banner = ultimo giorno del mese precedente
+    banner_date = (datetime.date.today().replace(day=1) - datetime.timedelta(days=1)).strftime("%d/%m/%Y")
+    banner_txt = f"Dati di performance aggiornati al: {banner_date}  (fonte: fondidoc.it)"
+
     # applica a ciascun file secondo il suo schema
     for cfg in FILES:
         if not cfg["path"].exists():
@@ -190,6 +196,8 @@ def main():
                         c.number_format = '0.00%'
                 upd += 1
             log(f"  {cfg['path'].name} / '{sheet}': {upd} righe aggiornate")
+            if cfg.get("banner"):
+                ws.cell(1, 1).value = banner_txt
         wb.save(str(cfg["path"]))
     log("FINITO.")
 
