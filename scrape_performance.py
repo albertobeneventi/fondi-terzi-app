@@ -117,11 +117,20 @@ def scrape_fund(fd_url):
     return result
 
 
+_HL_RE = re.compile(r'=HYPERLINK\("([^"]+)"', re.I)
+
+
 def fondidoc_url(cell):
     if cell.hyperlink and cell.hyperlink.target:
         return cell.hyperlink.target
     v = cell.value
-    return v if isinstance(v, str) and v.startswith('http') else None
+    if isinstance(v, str):
+        if v.startswith('http'):
+            return v
+        m = _HL_RE.search(v)  # formula =HYPERLINK("url","testo")
+        if m:
+            return m.group(1)
+    return None
 
 
 def collect_isin_urls():
