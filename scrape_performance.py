@@ -34,6 +34,7 @@ FILES = [
         "path": BASE / "fondi.xlsx",
         "data_start": 2, "col_isin": 3, "col_fondidoc": 30,
         "perf": {21: 'p1y', 22: 'p3y', 23: 'ytd', 24: 'p2024', 25: 'p2023', 26: 'p2022', 27: 'vol1y'},
+        "rating_col": 28,  # RATING (corone FIDA 1-5)
         "sheets": ["tutti quelli trasferibili", "quelli gestibili"],
         "banner": False,  # header gia' in riga 1, nessun banner
     },
@@ -41,6 +42,7 @@ FILES = [
         "path": BASE / "tabella_fondi.xlsx",
         "data_start": 3, "col_isin": 3, "col_fondidoc": 23,
         "perf": {14: 'p1y', 15: 'p3y', 16: 'ytd', 17: 'p2024', 18: 'p2023', 19: 'p2022', 20: 'vol1y'},
+        "rating_col": 21,  # RATING (corone FIDA 1-5)
         "sheets": ["tutti quelli trasferibili"],
         "banner": True,  # A1 = "Dati di performance aggiornati al: ..."
     },
@@ -83,7 +85,14 @@ def fetch(url, timeout=25):
 def scrape_fund(fd_url):
     result = {}
     r = fetch(fd_url)
-    lines = [l.strip() for l in BeautifulSoup(r.text, "html.parser").get_text(separator="\n").split("\n") if l.strip()]
+    soup = BeautifulSoup(r.text, "html.parser")
+    # Rating FIDA = numero di corone piene sulla scheda del fondo (0-5).
+    # La pagina /d/Index/ e' di un SINGOLO fondo, quindi il conteggio e' corretto
+    # (niente somma tra piu' risultati, che era il bug del vecchio scraper).
+    crowns = len(soup.find_all("span", class_="icon-Corona_FIDA"))
+    if 1 <= crowns <= 5:
+        result['rating'] = crowns
+    lines = [l.strip() for l in soup.get_text(separator="\n").split("\n") if l.strip()]
     for j, line in enumerate(lines):
         nxt = lines[j + 1] if j + 1 < len(lines) else ''
         if 'YTD' in line and ('1 anno' in line or '1Y' in line or 'anno' in nxt):
@@ -203,6 +212,10 @@ def main():
                         c = ws.cell(r, col)
                         c.value = v
                         c.number_format = '0.00%'
+                rc = cfg.get("rating_col")
+                rv = d.get('rating')
+                if rc and rv:
+                    ws.cell(r, rc).value = int(rv)
                 upd += 1
             log(f"  {cfg['path'].name} / '{sheet}': {upd} righe aggiornate")
             if cfg.get("banner"):
