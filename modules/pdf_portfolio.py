@@ -379,6 +379,7 @@ def generate_portfolio_pdf(
                 Paragraph("Perf. YTD", HDR),
                 Paragraph("Perf. 1Y", HDR),
                 Paragraph("Perf. 3Y", HDR),
+                Paragraph("Perf. 2025", HDR),
                 Paragraph("Perf. 2024", HDR),
                 Paragraph("Perf. 2023", HDR),
                 Paragraph("Volatilità 1Y", HDR),
@@ -387,11 +388,12 @@ def generate_portfolio_pdf(
                 _pc(f.get("perf_ytd")),
                 _pc(f.get("perf_1y")),
                 _pc(f.get("perf_3y")),
+                _pc(f.get("perf_2025")),
                 _pc(f.get("perf_2024")),
                 _pc(f.get("perf_2023")),
                 Paragraph(_pct(f.get("volatilita")), SM),
             ]]
-            met_tbl = Table(met_data, colWidths=[PW / 7] * 7)
+            met_tbl = Table(met_data, colWidths=[PW / 8] * 8)
             met_tbl.setStyle(TableStyle([
                 ("BACKGROUND",    (0, 0), (-1, 0), _BLUE),
                 ("ROWBACKGROUNDS",(0, 1), (-1, -1), [_LIGHT]),

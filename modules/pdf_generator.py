@@ -161,7 +161,8 @@ def generate_fund_pdf(row: dict, include_quantalys: bool = False) -> bytes:
 
     perf_data = [
         [Paragraph("YTD", S_LABEL), Paragraph("1 Anno", S_LABEL),
-         Paragraph("3 Anni", S_LABEL), Paragraph("2024", S_LABEL),
+         Paragraph("3 Anni", S_LABEL), Paragraph("2025", S_LABEL),
+         Paragraph("2024", S_LABEL),
          Paragraph("2023", S_LABEL), Paragraph("2022", S_LABEL)],
         [
             Paragraph(_pct(row.get(COL["perf_ytd"])),
@@ -173,6 +174,9 @@ def generate_fund_pdf(row: dict, include_quantalys: bool = False) -> bytes:
             Paragraph(_pct(row.get(COL["perf_3y"])),
                       ParagraphStyle("pv", fontSize=10, fontName="Helvetica-Bold",
                                      textColor=perf_color(row.get(COL["perf_3y"])))),
+            Paragraph(_pct(row.get(COL["perf_2025"])),
+                      ParagraphStyle("pv", fontSize=10, fontName="Helvetica-Bold",
+                                     textColor=perf_color(row.get(COL["perf_2025"])))),
             Paragraph(_pct(row.get(COL["perf_2024"])),
                       ParagraphStyle("pv", fontSize=10, fontName="Helvetica-Bold",
                                      textColor=perf_color(row.get(COL["perf_2024"])))),
@@ -184,7 +188,7 @@ def generate_fund_pdf(row: dict, include_quantalys: bool = False) -> bytes:
                                      textColor=perf_color(row.get(COL["perf_2022"])))),
         ]
     ]
-    perf_table = Table(perf_data, colWidths=["16.66%"]*6)
+    perf_table = Table(perf_data, colWidths=["14.28%"]*7)
     perf_table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), _LIGHT),
         ("BACKGROUND", (0, 1), (-1, 1), _WHITE),

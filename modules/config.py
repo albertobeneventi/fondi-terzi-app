@@ -30,6 +30,7 @@ COL = {
     "perf_1y":      "PERF. 1 ANNO",
     "perf_3y":      "PERF. 3 ANNI",
     "perf_ytd":     "PERF. YTD",
+    "perf_2025":    "PERF. 2025",
     "perf_2024":    "PERF. 2024",
     "perf_2023":    "PERF. 2023",
     "perf_2022":    "PERF. 2022",
@@ -45,7 +46,7 @@ PCT_COLS = {
     COL["comm_ingresso"], COL["comm_uscita"], COL["comm_gest"],
     COL["retro"],
     COL["perf_1y"], COL["perf_3y"], COL["perf_ytd"],
-    COL["perf_2024"], COL["perf_2023"], COL["perf_2022"],
+    COL["perf_2025"], COL["perf_2024"], COL["perf_2023"], COL["perf_2022"],
     COL["volatilita"],
 }
 

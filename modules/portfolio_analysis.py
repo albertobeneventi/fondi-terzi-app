@@ -171,6 +171,7 @@ def render_portfolio_analysis(funds: list[dict]):
             f"<th style='{_TH}text-align:center;'>YTD</th>"
             f"<th style='{_TH}text-align:center;'>1 Anno</th>"
             f"<th style='{_TH}text-align:center;'>3 Anni</th>"
+            f"<th style='{_TH}text-align:center;'>2025</th>"
             f"<th style='{_TH}text-align:center;'>2024</th>"
             f"<th style='{_TH}text-align:center;'>2023</th>"
             f"<th style='{_TH}text-align:center;'>2022</th>"
@@ -189,13 +190,14 @@ def render_portfolio_analysis(funds: list[dict]):
                 f"<td style='{_TC}text-align:center;'>{_perf_cell(f.get('perf_ytd'))}</td>"
                 f"<td style='{_TC}text-align:center;'>{_perf_cell(f.get('perf_1y'))}</td>"
                 f"<td style='{_TC}text-align:center;'>{_perf_cell(f.get('perf_3y'))}</td>"
+                f"<td style='{_TC}text-align:center;'>{_perf_cell(f.get('perf_2025'))}</td>"
                 f"<td style='{_TC}text-align:center;'>{_perf_cell(f.get('perf_2024'))}</td>"
                 f"<td style='{_TC}text-align:center;'>{_perf_cell(f.get('perf_2023'))}</td>"
                 f"<td style='{_TC}text-align:center;'>{_perf_cell(f.get('perf_2022'))}</td>"
                 f"</tr>"
             )
         # Medie portafoglio
-        avgs = [_wtd(k) for k in ["perf_ytd","perf_1y","perf_3y","perf_2024","perf_2023","perf_2022"]]
+        avgs = [_wtd(k) for k in ["perf_ytd","perf_1y","perf_3y","perf_2025","perf_2024","perf_2023","perf_2022"]]
         avg_row = "".join(f"<td style='padding:8px 10px;text-align:center;'>{_perf_cell(v)}</td>"
                           for v in avgs)
         body2 = (

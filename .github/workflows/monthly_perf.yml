@@ -1,4 +1,4 @@
-name: Aggiornamento mensile performance (fondi.xlsx)
+name: Aggiornamento mensile performance (FIDA API)
 
 on:
   schedule:
@@ -11,7 +11,7 @@ permissions:
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 330
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -20,16 +20,16 @@ jobs:
           python-version: "3.12"
 
       - name: Installa dipendenze minime
-        run: pip install requests beautifulsoup4 openpyxl lxml
+        run: pip install requests openpyxl
 
-      - name: Aggiorna performance nei file dati
-        run: python scrape_performance.py
+      - name: Aggiorna performance (API JSON di FIDA) nel file dati dell'app
+        run: python scrape_fidax.py
 
-      - name: Commit dei file aggiornati
+      - name: Commit del file aggiornato
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/tabella_fondi_arricchita_new.xlsx data/fondi.xlsx data/tabella_fondi.xlsx
+          git add data/tabella_fondi_arricchita_new.xlsx
           if git diff --staged --quiet; then
             echo "Nessuna modifica."
           else

@@ -323,7 +323,8 @@ Il punteggio viene *amplificato* dal Rating FIDA (ogni stella aggiunge un moltip
                 row = isin_to_row.get(f["ISIN"], {})
                 out = dict(f)
                 for k, col in [("perf_ytd",COL["perf_ytd"]),("perf_3y",COL["perf_3y"]),
-                                ("perf_2024",COL["perf_2024"]),("perf_2023",COL["perf_2023"]),
+                                ("perf_2025",COL["perf_2025"]),("perf_2024",COL["perf_2024"]),
+                                ("perf_2023",COL["perf_2023"]),
                                 ("perf_2022",COL["perf_2022"]),("volatilita",COL["volatilita"]),
                                 ("acc_dist",COL["acc_dist"])]:
                     out[k] = row.get(col)

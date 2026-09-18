@@ -221,7 +221,7 @@ def _consistency_bonus(row) -> float:
     Penalizza ogni anno < -10%.
     """
     bonus = 0.0
-    for col in [COL["perf_2022"], COL["perf_2023"], COL["perf_2024"]]:
+    for col in [COL["perf_2022"], COL["perf_2023"], COL["perf_2024"], COL["perf_2025"]]:
         v = row.get(col)
         if v is None or str(v) in ("nan", "None"):
             continue
