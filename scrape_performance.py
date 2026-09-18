@@ -3,7 +3,12 @@
 Aggiornamento UNIFICATO performance + volatilita 1Y da fondidoc.it.
 Scarica UNA volta sola e aggiorna entrambi i file (stessi ISIN/link FondiDoc):
 
-  data/fondi.xlsx          -> usato dall'app Streamlit
+  data/tabella_fondi_arricchita_new.xlsx -> SORGENTE EFFETTIVA dell'app
+      header riga 2, dati da riga 3; ISIN col3; link FondiDoc col23;
+      perf col14=1Y,15=3Y,16=YTD,17=2024,18=2023,19=2022,20=VOL
+      scheda 'tutti quelli trasferibili'
+
+  data/fondi.xlsx          -> ex sorgente app (mantenuto per compatibilita')
       header riga 1, dati da riga 2; ISIN col3; link FondiDoc col30;
       perf col21=1Y,22=3Y,23=YTD,24=2024,25=2023,26=2022,27=VOL
       schede 'tutti quelli trasferibili' (+ 'quelli gestibili' duplicato)
@@ -40,6 +45,15 @@ FILES = [
     },
     {
         "path": BASE / "tabella_fondi.xlsx",
+        "data_start": 3, "col_isin": 3, "col_fondidoc": 23,
+        "perf": {14: 'p1y', 15: 'p3y', 16: 'ytd', 17: 'p2024', 18: 'p2023', 19: 'p2022', 20: 'vol1y'},
+        "rating_col": 21,  # RATING (corone FIDA 1-5)
+        "sheets": ["tutti quelli trasferibili"],
+        "banner": True,  # A1 = "Dati di performance aggiornati al: ..."
+    },
+    {
+        # File sorgente EFFETTIVO dell'app (stesso schema di tabella_fondi.xlsx)
+        "path": BASE / "tabella_fondi_arricchita_new.xlsx",
         "data_start": 3, "col_isin": 3, "col_fondidoc": 23,
         "perf": {14: 'p1y', 15: 'p3y', 16: 'ytd', 17: 'p2024', 18: 'p2023', 19: 'p2022', 20: 'vol1y'},
         "rating_col": 21,  # RATING (corone FIDA 1-5)

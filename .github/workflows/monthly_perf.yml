@@ -22,14 +22,14 @@ jobs:
       - name: Installa dipendenze minime
         run: pip install requests beautifulsoup4 openpyxl lxml
 
-      - name: Aggiorna performance in data/fondi.xlsx
+      - name: Aggiorna performance nei file dati
         run: python scrape_performance.py
 
-      - name: Commit del file aggiornato
+      - name: Commit dei file aggiornati
         run: |
           git config user.name  "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/fondi.xlsx data/tabella_fondi.xlsx
+          git add data/tabella_fondi_arricchita_new.xlsx data/fondi.xlsx data/tabella_fondi.xlsx
           if git diff --staged --quiet; then
             echo "Nessuna modifica."
           else
