@@ -16,17 +16,16 @@ _QUANTALYS_CACHE = _DATA_DIR / "quantalys_cache.json"
 def get_last_data_update() -> str:
     """Data ultimo aggiornamento dati fondi.
 
-    Priorità: banner 'Dati di performance aggiornati al: …' nel foglio di
-    `tabella_fondi.xlsx` (scritto dalla pipeline mensile). Fallback: data di
-    modifica del file dati caricato dall'app. Ritorna '' se non ricavabile.
+    Priorità: banner 'Dati di performance aggiornati al: …' in riga 1 del
+    file dati (DATA_FILE). Fallback: data di modifica del file. Ritorna '' se
+    non ricavabile.
     """
     import datetime, re
-    # 1) banner nel file tabella_fondi.xlsx (stessa cartella data/)
-    banner_file = _DATA_DIR / "tabella_fondi.xlsx"
-    if banner_file.exists():
+    # 1) banner 'Dati di performance aggiornati al: …' nel file dati stesso
+    if os.path.exists(DATA_FILE):
         try:
             import openpyxl
-            wb = openpyxl.load_workbook(banner_file, read_only=True)
+            wb = openpyxl.load_workbook(DATA_FILE, read_only=True)
             ws = wb[SHEET_NAME] if SHEET_NAME in wb.sheetnames else wb.worksheets[0]
             a1 = str(ws.cell(1, 1).value or "")
             wb.close()
@@ -83,9 +82,58 @@ def _normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
+def _header_row(path) -> int:
+    """0-based indice di riga delle intestazioni. I file 'arricchita' hanno un
+    banner 'Dati di performance aggiornati al: …' in riga 1 e le intestazioni
+    in riga 2; i file semplici hanno le intestazioni in riga 1."""
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(path, read_only=True)
+        ws = wb[SHEET_NAME] if SHEET_NAME in wb.sheetnames else wb.worksheets[0]
+        a1 = str(ws.cell(1, 1).value or "")
+        wb.close()
+        return 1 if a1.strip().lower().startswith("dati di performance") else 0
+    except Exception:
+        return 0
+
+
+def _file_hyperlinks(path, header_row: int) -> dict:
+    """Legge gli URL reali (hyperlink) di SCHEDA FONDIDOC / SCHEDA QUANTALYS dal
+    file, indicizzati per ISIN: {isin: {'fd': url, 'q': url}}."""
+    out = {}
+    try:
+        import openpyxl
+        wb = openpyxl.load_workbook(path)
+        ws = wb[SHEET_NAME] if SHEET_NAME in wb.sheetnames else wb.worksheets[0]
+        hrow = header_row + 1  # openpyxl è 1-based
+        hdr = {str(ws.cell(hrow, c).value).strip(): c
+               for c in range(1, ws.max_column + 1) if ws.cell(hrow, c).value}
+        c_isin = hdr.get("ISIN")
+        c_fd   = hdr.get(COL["url_fondidoc"])
+        c_q    = hdr.get(COL["url_quantalys"])
+        if c_isin:
+            for r in range(hrow + 1, ws.max_row + 1):
+                isin = ws.cell(r, c_isin).value
+                if not isin:
+                    continue
+                isin = str(isin).strip()
+                rec = {}
+                if c_fd and ws.cell(r, c_fd).hyperlink and ws.cell(r, c_fd).hyperlink.target:
+                    rec["fd"] = ws.cell(r, c_fd).hyperlink.target
+                if c_q and ws.cell(r, c_q).hyperlink and ws.cell(r, c_q).hyperlink.target:
+                    rec["q"] = ws.cell(r, c_q).hyperlink.target
+                if rec:
+                    out[isin] = rec
+        wb.close()
+    except Exception:
+        pass
+    return out
+
+
 @st.cache_data(show_spinner="Caricamento fondi...")
 def load_data() -> pd.DataFrame:
-    df = pd.read_excel(DATA_FILE, sheet_name=SHEET_NAME, dtype=str)
+    _hrow = _header_row(DATA_FILE)
+    df = pd.read_excel(DATA_FILE, sheet_name=SHEET_NAME, dtype=str, header=_hrow)
     df = _normalize_columns(df)
     # Converti percentuali
     for col in PCT_COLS:
@@ -94,7 +142,7 @@ def load_data() -> pd.DataFrame:
     if COL["rating"] in df.columns:
         df[COL["rating"]] = pd.to_numeric(df[COL["rating"]], errors="coerce")
 
-    # Carica URL reali dalle cache JSON direttamente (non via funzioni cachate)
+    # URL schede: priorità agli hyperlink del file dati, fallback alle cache JSON
     isin_col = COL["isin"]
     if isin_col in df.columns:
         fd_urls, qly_urls = {}, {}
@@ -104,7 +152,17 @@ def load_data() -> pd.DataFrame:
         if os.path.exists(_QUANTALYS_CACHE):
             with open(_QUANTALYS_CACHE, encoding="utf-8") as f:
                 qly_urls = {k: v for k, v in json.load(f).items() if v}
-        df[COL["url_fondidoc"]]  = df[isin_col].astype(str).str.strip().map(fd_urls)
-        df[COL["url_quantalys"]] = df[isin_col].astype(str).str.strip().map(qly_urls)
+        file_links = _file_hyperlinks(DATA_FILE, _hrow)
+
+        def _url(isin, kind, cache):
+            isin = str(isin).strip()
+            rec = file_links.get(isin)
+            if rec and rec.get(kind):
+                return rec[kind]
+            return cache.get(isin)
+
+        keys = df[isin_col].astype(str).str.strip()
+        df[COL["url_fondidoc"]]  = keys.map(lambda i: _url(i, "fd", fd_urls))
+        df[COL["url_quantalys"]] = keys.map(lambda i: _url(i, "q",  qly_urls))
 
     return df

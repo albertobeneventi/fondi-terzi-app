@@ -4,7 +4,7 @@ from pathlib import Path
 
 # ── Percorsi file dati (relativi alla cartella app — funziona sia in locale che su Streamlit Cloud) ──
 _APP_DIR   = Path(__file__).parent.parent
-DATA_FILE  = _APP_DIR / "data" / "fondi.xlsx"
+DATA_FILE  = _APP_DIR / "data" / "tabella_fondi_arricchita_new.xlsx"
 SHEET_NAME = "tutti quelli trasferibili"
 
 # ── Nomi colonne normalizzati (dopo strip) ──────────────────────────────────

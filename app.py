@@ -572,9 +572,12 @@ with tab_update:
                     pdf_df = pd.DataFrame(rows).drop_duplicates(subset="ISIN")
                     pdf_isins = set(pdf_df["ISIN"].astype(str).str.strip())
 
-                    # Leggi Excel corrente
-                    xls_path = _Path(__file__).parent / "data" / "fondi.xlsx"
-                    sheets   = pd.read_excel(xls_path, sheet_name=None, dtype=str)
+                    # Leggi Excel corrente (stesso file dati usato dall'app)
+                    from modules.config import DATA_FILE
+                    from modules.data_loader import _header_row
+                    xls_path = DATA_FILE
+                    _hr = _header_row(xls_path)
+                    sheets   = pd.read_excel(xls_path, sheet_name=None, dtype=str, header=_hr)
                     main     = sheets["tutti quelli trasferibili"]
                     main.columns = [str(c).strip() for c in main.columns]
                     xls_isins = set(main["ISIN"].astype(str).str.strip())
