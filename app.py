@@ -29,7 +29,7 @@ from modules.config import (
     COL, PCT_COLS, COLOR_PRIMARY, COLOR_ACCENT,
     COLOR_BG_LIGHT, COLOR_STAR_ON, COLOR_POS, COLOR_NEG, COLOR_NEUTRAL
 )
-from modules.data_loader import load_data
+from modules.data_loader import load_data, get_last_data_update
 from modules.filters import render_filters
 from modules.pdf_generator import generate_fund_pdf
 from modules.portfolio_manager import (
@@ -636,18 +636,29 @@ with tab_update:
     st.divider()
 
     # ── Sezione 3: Aggiornamento mensile manuale ─────────────────────────────
-    st.markdown("### 🗓️ Aggiornamento performance manuale")
-    st.info(
-        "L'aggiornamento automatico è pianificato ogni **5 del mese alle 02:00** "
-        "tramite Windows Task Scheduler (aggiorna performance, volatilità e rating da fondidoc).\n\n"
-        "Puoi forzarlo ora cliccando il pulsante (richiede ~8 ore in background)."
-    )
-    if st.button("▶️ Avvia aggiornamento performance ora", key="btn_manual_update"):
-        _sp.Popen([
-            "C:/Users/benev/AppData/Local/Programs/Python/Python312/python.exe",
-            "C:/Users/benev/monthly_update.py"
-        ])
-        st.success("Aggiornamento avviato in background. Controlla `C:\\Users\\benev\\monthly_update.log`.")
+    st.markdown("### 🗓️ Aggiornamento performance")
+    st.caption(f"Dati fondi attualmente caricati aggiornati al: **{get_last_data_update() or 'n/d'}**")
+
+    import os as _os, subprocess as _sp
+    _PY_EXE = "C:/Users/benev/AppData/Local/Programs/Python/Python312/python.exe"
+    _UPDATE_SCRIPT = "C:/Users/benev/monthly_update.py"
+    _is_local = _os.path.exists(_PY_EXE) and _os.path.exists(_UPDATE_SCRIPT)
+
+    if _is_local:
+        st.info(
+            "L'aggiornamento automatico è pianificato mensilmente (performance, volatilità "
+            "e rating da fondidoc). Puoi forzarlo ora dal PC locale "
+            "(richiede diverse ore in background)."
+        )
+        if st.button("▶️ Avvia aggiornamento performance ora", key="btn_manual_update"):
+            _sp.Popen([_PY_EXE, _UPDATE_SCRIPT])
+            st.success("Aggiornamento avviato in background. Controlla `C:\\Users\\benev\\monthly_update.log`.")
+    else:
+        st.info(
+            "☁️ Sei sulla versione **cloud**: l'aggiornamento performance gira in automatico "
+            "ogni mese tramite la pipeline pianificata (GitHub Actions). "
+            "L'avvio manuale è disponibile solo dall'app sul PC locale."
+        )
 
 # ══════════════════════════════════════════════════════════════════════════════
 with tab_ricerca:
@@ -658,6 +669,9 @@ with tab_ricerca:
             <h1 style='color:white;margin:0;font-size:26px;'>📊 Fondi Società Terze</h1>
             <p style='color:#CBD5E0;margin:4px 0 0;font-size:14px;'>
                 Analisi e selezione fondi — {len(df):,} fondi visualizzati su {len(df_all):,}
+            </p>
+            <p style='color:#94A3B8;margin:2px 0 0;font-size:12px;'>
+                🗓️ Dati fondi aggiornati al: {get_last_data_update() or "n/d"}
             </p>
         </div>
     """, unsafe_allow_html=True)

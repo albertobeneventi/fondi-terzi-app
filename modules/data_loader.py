@@ -13,6 +13,37 @@ _QUANTALYS_CACHE = _DATA_DIR / "quantalys_cache.json"
 
 
 @st.cache_data(show_spinner=False)
+def get_last_data_update() -> str:
+    """Data ultimo aggiornamento dati fondi.
+
+    Priorità: banner 'Dati di performance aggiornati al: …' nel foglio di
+    `tabella_fondi.xlsx` (scritto dalla pipeline mensile). Fallback: data di
+    modifica del file dati caricato dall'app. Ritorna '' se non ricavabile.
+    """
+    import datetime, re
+    # 1) banner nel file tabella_fondi.xlsx (stessa cartella data/)
+    banner_file = _DATA_DIR / "tabella_fondi.xlsx"
+    if banner_file.exists():
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(banner_file, read_only=True)
+            ws = wb[SHEET_NAME] if SHEET_NAME in wb.sheetnames else wb.worksheets[0]
+            a1 = str(ws.cell(1, 1).value or "")
+            wb.close()
+            m = re.search(r"(\d{2}/\d{2}/\d{4})", a1)
+            if m:
+                return m.group(1)
+        except Exception:
+            pass
+    # 2) fallback: mtime del file dati effettivo
+    try:
+        ts = os.path.getmtime(DATA_FILE)
+        return datetime.datetime.fromtimestamp(ts).strftime("%d/%m/%Y")
+    except Exception:
+        return ""
+
+
+@st.cache_data(show_spinner=False)
 def _load_fondidoc_urls() -> dict:
     if not os.path.exists(_FONDIDOC_CACHE):
         return {}
